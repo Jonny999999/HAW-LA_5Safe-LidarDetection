@@ -11,9 +11,12 @@ MAX_FRAMES = 500           # Total frames to simulate
 FRAME_DELAY = 0.1          # Delay between simulated stream input (in seconds)
 
 # what should be drawn as second RED pointcloud:
-#mode_second_data_set = "HIGHPASS+DENOISE"
+mode_second_data_set = "HIGHPASS+DENOISE"
 #mode_second_data_set = "OLDEST"
-mode_second_data_set = "HIGHPASS"
+#mode_second_data_set = "HIGHPASS"
+
+COUNT_PEOPLE_ENABLED = True
+COUNT_PEOPLE_DRAW_BOXES = True
 
 
 # === Globals (for simulation) ===
@@ -83,29 +86,30 @@ def initialize_visualizer():
 def visualize_dual_frame(raw_points, filtered_points):
     global visualizer, pcd_raw, pcd_filtered, geometryOptonAdded
 
+
     if raw_points.size == 0 and filtered_points.size == 0:
         print("[WARN] Both frames empty, skipping visualization.")
         return
 
-    if filtered_points.size > 0:
-        pcd_filtered.points = o3d.utility.Vector3dVector(filtered_points.astype(np.float64))
     if raw_points.size > 0:
         pcd_raw.points = o3d.utility.Vector3dVector(raw_points.astype(np.float64))
+        # Optional: reset color if you want raw to be a default gray
+        # pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])   # gray color
+        visualizer.update_geometry(pcd_raw)
+
+    if filtered_points.size > 0:
+        pcd_filtered.points = o3d.utility.Vector3dVector(filtered_points.astype(np.float64))
+        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])  # solid red after updating points!
+        visualizer.update_geometry(pcd_filtered)
 
     if not geometryOptonAdded:
-        # FIXME: weird behavior: usually those options should be set once in init function but results in white window or not applied color -> running here once after first data got applied
         visualizer.add_geometry(pcd_raw)
         visualizer.add_geometry(pcd_filtered)
-        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
         geometryOptonAdded = True
-    else:
-        visualizer.update_geometry(pcd_raw)
-        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
-        visualizer.update_geometry(pcd_filtered)
-        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
 
     visualizer.poll_events()
     visualizer.update_renderer()
+
 
 
 
@@ -204,6 +208,7 @@ def remove_isolated_points(points, nb_points=3, radius=0.2):
 
 
 # === PROCESS FRAME FROM BUFFER ===
+frame_counter = 0
 def process_and_visualize_latest_frame():
     """
     Selects a frame from the buffer based on selected mode and visualizes it.
@@ -234,11 +239,85 @@ def process_and_visualize_latest_frame():
     else:
         print("Invalid visualization mode mode_second_data_set", mode_second_data_set)
 
+
+    # Estimate how many people are likely moving
+    # global frame_counter
+    # frame_counter += 1
+
+    # if frame_counter % 10 == 0:  # Every 10 frames
+    global COUNT_PEOPLE_ENABLED
+    if COUNT_PEOPLE_ENABLED:
+        num_people = estimate_moving_people(filtered_frame)
+
     #print("[DEBUG] Sample points:\n", filtered_frame[:5])
     #visualize_frame(selected_frame)
     # draw orignal and manipulated dataset (default + red color)
     visualize_dual_frame(latest_frame, filtered_frame)
 
+
+
+
+
+drawn_bounding_boxes = []
+
+
+def estimate_moving_people(pointcloud_np, eps=0.5, min_points=30):
+    """
+    Estimates number of moving people in a filtered point cloud using DBSCAN clustering.
+
+    Args:
+        pointcloud_np (np.ndarray): N x 3 array of points from filtered motion data.
+        eps (float): Distance threshold for DBSCAN clustering (meters).
+        min_points (int): Minimum number of points to consider a cluster valid.
+
+    Returns:
+        int: Estimated number of moving people (clusters above min_points).
+    """
+    global visualizer, drawn_bounding_boxes
+
+    if pointcloud_np.shape[0] == 0:
+        print("[INFO] No dynamic points to analyze.")
+        return 0
+
+
+    # Step 2: Cluster the filtered points
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pointcloud_np)
+    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=min_points, print_progress=False))
+
+    if labels.size == 0 or np.max(labels) < 0:
+        print("[INFO] No clusters found.")
+        return 0
+
+    unique_labels, counts = np.unique(labels, return_counts=True)
+
+    valid_clusters = 0
+
+    global COUNT_PEOPLE_DRAW_BOXES
+    if COUNT_PEOPLE_DRAW_BOXES:
+        # Step 1: Clear previous boxes
+        for box in drawn_bounding_boxes:
+            visualizer.remove_geometry(box, reset_bounding_box=False)
+        drawn_bounding_boxes.clear()
+
+        for cluster_id, count in zip(unique_labels, counts):
+            if cluster_id == -1 or count < min_points:
+                continue  # skip noise
+
+            valid_clusters += 1
+            indices = np.where(labels == cluster_id)[0]
+            cluster_pcd = pcd.select_by_index(indices)
+
+            # Draw bounding box
+            bbox = cluster_pcd.get_axis_aligned_bounding_box()
+            #bbox.color = (0, 1, 0)  # green
+            bbox.color = (0.0, 0.0, 0.5)  # Dark blue
+            #visualizer.add_geometry(bbox)
+            visualizer.add_geometry(bbox, reset_bounding_box=False)
+            drawn_bounding_boxes.append(bbox)
+
+    print(f"[INFO] Estimated number of moving people: {valid_clusters}")
+    return valid_clusters
 
 
 
