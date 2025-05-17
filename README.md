@@ -22,3 +22,24 @@ The project also includes visualization, post-processing, and tools for analyzin
 - `output-processing/`: Scripts to merge and analyze results
 - `dashboard/`: Visualization and interaction interface
 - `scripts/`: Helper tools and conversion scripts
+
+
+## Repo Setup / Installation
+
+For the testdata files in the `data/` folder (like recorded LiDAR logs) to work, **Git LFS must be installed** — otherwise, you'll only get pointer files instead of real content.
+
+### Install Git LFS:
+
+- **Linux**:  
+  `sudo pacman -S git-lfs && git lfs install`
+
+- **Windows** (PowerShell):  
+  `choco install git-lfs`  
+  or download at https://git-lfs.com/  
+  then  
+  `git lfs install`
+
+### After cloning the repo:
+```bash
+git lfs pull
+```
