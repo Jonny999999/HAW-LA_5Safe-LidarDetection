@@ -6,7 +6,7 @@ from collections import deque
 from scipy.spatial import cKDTree # to map closest points for highpass filter
 
 # === Configuration ===
-BUFFER_SIZE = 10           # Rolling buffer of last N frames
+BUFFER_SIZE = 6           # Rolling buffer of last N frames
 MAX_FRAMES = 500           # Total frames to simulate
 FRAME_DELAY = 0.1          # Delay between simulated stream input (in seconds)
 
@@ -24,7 +24,7 @@ frame_buffer = deque(maxlen=BUFFER_SIZE)  # Rolling buffer
 visualizer = None                         # Open3D visualizer
 pcd = None                                # Point cloud object
 is_initialized = False                    # Initialization flag
-geometryOptonAdded = False
+geometryAdded = False
 
 
 ##def initialize_visualizer():
@@ -41,7 +41,7 @@ geometryOptonAdded = False
 
 ### === FRAME VISUALIZATION ONLY ===
 ##def visualize_frame(frame):
-##    global visualizer, pcd, geometryOptonAdded
+##    global visualizer, pcd, geometryAdded
 ##
 ##    if frame.size == 0:
 ##        print("[WARN] Empty frame, skipping visualization.")
@@ -49,9 +49,9 @@ geometryOptonAdded = False
 ##
 ##    pcd.points = o3d.utility.Vector3dVector(frame.astype(np.float64))
 ##
-##    if not geometryOptonAdded:
+##    if not geometryAdded:
 ##        visualizer.add_geometry(pcd)
-##        geometryOptonAdded = True
+##        geometryAdded = True
 ##    else:
 ##        visualizer.update_geometry(pcd)
 ##
@@ -61,7 +61,7 @@ geometryOptonAdded = False
 
 
 def initialize_visualizer():
-    global visualizer, pcd_raw, pcd_filtered, is_initialized, geometryOptonAdded
+    global visualizer, pcd_raw, pcd_filtered, is_initialized, geometryAdded
 
     print("[INFO] Initializing Open3D visualizer window...")
     visualizer = o3d.visualization.Visualizer()
@@ -75,8 +75,9 @@ def initialize_visualizer():
     pcd_filtered = o3d.geometry.PointCloud()
     pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
 
-    visualizer.add_geometry(pcd_raw)
-    visualizer.add_geometry(pcd_filtered)
+    # we add the geometries later after first actual data loaded so camera position is correct
+    #visualizer.add_geometry(pcd_raw)
+    #visualizer.add_geometry(pcd_filtered)
 
     is_initialized = True
 
@@ -84,17 +85,26 @@ def initialize_visualizer():
 
 # update window with two pointclouds in default and red color
 def visualize_dual_frame(raw_points, filtered_points):
-    global visualizer, pcd_raw, pcd_filtered, geometryOptonAdded
+    global visualizer, pcd_raw, pcd_filtered, geometryAdded
 
 
     if raw_points.size == 0 and filtered_points.size == 0:
         print("[WARN] Both frames empty, skipping visualization.")
         return
 
+
+    # if both pointclouds are provided, remove equal points from raw_points cloud so filtered_points are always visible (draw order seems random, sometimes red points not visible at all)
+    if raw_points.size > 0 and filtered_points.size > 0:
+        # Remove raw points that are exactly in filtered_points
+        raw_set = set(map(tuple, raw_points))
+        filt_set = set(map(tuple, filtered_points))
+        visible_raw_points = np.array(list(raw_set - filt_set))
+        raw_points = visible_raw_points
+
     if raw_points.size > 0:
         pcd_raw.points = o3d.utility.Vector3dVector(raw_points.astype(np.float64))
         # Optional: reset color if you want raw to be a default gray
-        # pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])   # gray color
+        pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])   # gray color
         visualizer.update_geometry(pcd_raw)
 
     if filtered_points.size > 0:
@@ -102,10 +112,10 @@ def visualize_dual_frame(raw_points, filtered_points):
         pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])  # solid red after updating points!
         visualizer.update_geometry(pcd_filtered)
 
-    if not geometryOptonAdded:
+    if not geometryAdded:
         visualizer.add_geometry(pcd_raw)
         visualizer.add_geometry(pcd_filtered)
-        geometryOptonAdded = True
+        geometryAdded = True
 
     visualizer.poll_events()
     visualizer.update_renderer()
@@ -219,6 +229,7 @@ def process_and_visualize_latest_frame():
         print("[WARN] Frame buffer is empty.")
         return
 
+    #latest_frame = frame_buffer[-1]
     latest_frame = frame_buffer[-1]
 
     if mode_second_data_set == "OLDEST":
@@ -234,7 +245,7 @@ def process_and_visualize_latest_frame():
         #highpass: only keep points that moved certain meters since oldest buffer value
         highpass_points = apply_highpass_filter(frame_buffer, minMovedMetersThreshold=0.1)
         #denoise: Removes points with fewer than `nb_points` neighbors within `radius`.
-        filtered_frame = remove_isolated_points(highpass_points, nb_points=3, radius=0.5)
+        filtered_frame = remove_isolated_points(highpass_points, nb_points=20, radius=0.3)
     
     else:
         print("Invalid visualization mode mode_second_data_set", mode_second_data_set)
@@ -247,27 +258,26 @@ def process_and_visualize_latest_frame():
     # if frame_counter % 10 == 0:  # Every 10 frames
     global COUNT_PEOPLE_ENABLED
     if COUNT_PEOPLE_ENABLED:
-        num_people = estimate_moving_people(filtered_frame)
+        num_people = estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=50)
 
     #print("[DEBUG] Sample points:\n", filtered_frame[:5])
     #visualize_frame(selected_frame)
     # draw orignal and manipulated dataset (default + red color)
     visualize_dual_frame(latest_frame, filtered_frame)
+    #visualize_dual_frame(filtered_frame, latest_frame)
 
 
 
 
 
-drawn_bounding_boxes = []
-
-
-def estimate_moving_people(pointcloud_np, eps=0.5, min_points=30):
+drawn_bounding_boxes = [] 
+def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30):
     """
     Estimates number of moving people in a filtered point cloud using DBSCAN clustering.
 
     Args:
         pointcloud_np (np.ndarray): N x 3 array of points from filtered motion data.
-        eps (float): Distance threshold for DBSCAN clustering (meters).
+        distance_threshold (float): Distance threshold for DBSCAN clustering (meters).
         min_points (int): Minimum number of points to consider a cluster valid.
 
     Returns:
@@ -279,11 +289,13 @@ def estimate_moving_people(pointcloud_np, eps=0.5, min_points=30):
         print("[INFO] No dynamic points to analyze.")
         return 0
 
+    # TODO: cancel when taking too long - hangs for several seconds when many points as input (e.g. filter off or loss)
+
 
     # Step 2: Cluster the filtered points
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pointcloud_np)
-    labels = np.array(pcd.cluster_dbscan(eps=eps, min_points=min_points, print_progress=False))
+    labels = np.array(pcd.cluster_dbscan(eps=distance_threshold, min_points=min_points, print_progress=False))
 
     if labels.size == 0 or np.max(labels) < 0:
         print("[INFO] No clusters found.")
