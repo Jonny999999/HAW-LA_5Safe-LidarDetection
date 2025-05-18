@@ -4,15 +4,16 @@ import numpy as np
 import time
 from collections import deque
 from scipy.spatial import cKDTree # to map closest points for highpass filter
+from colorama import Fore, Style
 
 # === Configuration ===
-BUFFER_SIZE = 6           # Rolling buffer of last N frames
+BUFFER_SIZE = 20           # Rolling buffer of last N frames
 MAX_FRAMES = 500           # Total frames to simulate
 FRAME_DELAY = 0.1          # Delay between simulated stream input (in seconds)
 
 # what should be drawn as second RED pointcloud:
 mode_second_data_set = "HIGHPASS+DENOISE"
-#mode_second_data_set = "OLDEST"
+#mode_second_data_set = "OLDEST" # (test buffer size)
 #mode_second_data_set = "HIGHPASS"
 
 COUNT_PEOPLE_ENABLED = True
@@ -27,43 +28,26 @@ is_initialized = False                    # Initialization flag
 geometryAdded = False
 
 
-##def initialize_visualizer():
-##    global visualizer, pcd, is_initialized
-##
-##    print("[INFO] Initializing Open3D visualizer window...")
-##    visualizer = o3d.visualization.Visualizer()
-##    visualizer.create_window(window_name="LiDAR Streaming", width=1280, height=720)
-##
-##    pcd = o3d.geometry.PointCloud()
-##    visualizer.add_geometry(pcd)
-##    is_initialized = True
 
+# helper functions for logging
+def log_warn(msg):
+    print(f"{Fore.YELLOW}[WARN] {msg}{Style.RESET_ALL}")
 
-### === FRAME VISUALIZATION ONLY ===
-##def visualize_frame(frame):
-##    global visualizer, pcd, geometryAdded
-##
-##    if frame.size == 0:
-##        print("[WARN] Empty frame, skipping visualization.")
-##        return
-##
-##    pcd.points = o3d.utility.Vector3dVector(frame.astype(np.float64))
-##
-##    if not geometryAdded:
-##        visualizer.add_geometry(pcd)
-##        geometryAdded = True
-##    else:
-##        visualizer.update_geometry(pcd)
-##
-##    visualizer.poll_events()
-##    visualizer.update_renderer()
+def log_info(msg):
+    print(f"{Fore.GREEN}[INFO]{Style.RESET_ALL} {msg}")
+
+def log_error(msg):
+    print(f"{Fore.RED}[ERROR] {msg}{Style.RESET_ALL}")
+
+def log_debug(msg):
+    print(f"{Fore.WHITE}[DEBUG] {msg}{Style.RESET_ALL}")
 
 
 
 def initialize_visualizer():
     global visualizer, pcd_raw, pcd_filtered, is_initialized, geometryAdded
 
-    print("[INFO] Initializing Open3D visualizer window...")
+    log_info("[INFO] Initializing Open3D visualizer window...")
     visualizer = o3d.visualization.Visualizer()
     visualizer.create_window(window_name="LiDAR Streaming", width=1280, height=720)
 
@@ -89,7 +73,7 @@ def visualize_dual_frame(raw_points, filtered_points):
 
 
     if raw_points.size == 0 and filtered_points.size == 0:
-        print("[WARN] Both frames empty, skipping visualization.")
+        log_warn(" Both frames empty, skipping visualization.")
         return
 
 
@@ -131,21 +115,21 @@ def simulate_stream_input(pcap_path, max_frames=MAX_FRAMES):
     Simulates streaming by reading PCAP frame-by-frame.
     Appends each frame to the global rolling buffer.
     """
-    print(f"[INFO] Starting simulated stream from: {pcap_path}")
+    log_info(f"[INFO] Starting simulated stream from: {pcap_path}")
     frame_count = 0
 
     for stamp, pointcloud in vd.read_pcap(pcap_path):
         if frame_count >= max_frames:
-            print("[INFO] Reached max frame limit.")
+            log_info("Reached max frame limit.")
             break
 
         if pointcloud.shape[1] < 3:
-            print(f"[WARNING] Skipping frame {frame_count}, insufficient dimensions.")
+            log_warn(f"Skipping frame {frame_count}, insufficient dimensions.")
             continue
 
         xyz = pointcloud[:, :3]  # Keep only XYZ
         frame_buffer.append(xyz)  # Add to rolling buffer
-        print(f"[DEBUG] Frame {frame_count:03d} appended to buffer ({xyz.shape[0]} points).")
+        log_debug(f"Frame {frame_count:03d} appended to buffer ({xyz.shape[0]} points).")
         
 
         # Maintain rolling size
@@ -154,7 +138,7 @@ def simulate_stream_input(pcap_path, max_frames=MAX_FRAMES):
 
         # Only start visualizing after buffer is full
         if len(frame_buffer) < BUFFER_SIZE:
-            print(f"[INFO] Buffer not full yet ({len(frame_buffer)}/{BUFFER_SIZE}). Waiting...")
+            log_warn(f"Buffer not full yet ({len(frame_buffer)}/{BUFFER_SIZE}). Skipping compute...")
             continue
 
         # now its safe to visualize (buffer full)
@@ -176,7 +160,7 @@ def apply_highpass_filter(buffer, minMovedMetersThreshold=0.2):
     Uses KDTree to handle differing point counts.
     """
     if len(buffer) < 2:
-        print("[WARN] Not enough frames in buffer for high-pass filtering.")
+        log_warn("Not enough frames in buffer for high-pass filtering.")
         return buffer[-1]
 
     # TODO: Adjust selected frames for comparison
@@ -192,7 +176,7 @@ def apply_highpass_filter(buffer, minMovedMetersThreshold=0.2):
     mask = distances > minMovedMetersThreshold
     filtered = latest[mask]
 
-    print(f"[DEBUG] HIGH-PASS: kept {filtered.shape[0]} of {latest.shape[0]} points.")
+    log_debug(f"HIGH-PASS: kept {filtered.shape[0]} of {latest.shape[0]} points.")
     return filtered
 
 
@@ -209,7 +193,7 @@ def remove_isolated_points(points, nb_points=3, radius=0.2):
     cl, ind = pcd.remove_radius_outlier(nb_points, radius)
     filtered_points = np.asarray(cl.points)  # Use filtered cloud's points, not original indices
 
-    print(f"[DEBUG] DENOISE: Removed isolated points. Kept {len(filtered_points)} of {len(points)} points.")
+    log_debug(f"DENOISE: Removed isolated points. Kept {len(filtered_points)} of {len(points)} points.")
     return filtered_points
 
 
@@ -226,7 +210,7 @@ def process_and_visualize_latest_frame():
     global mode_second_data_set
 
     if not frame_buffer:
-        print("[WARN] Frame buffer is empty.")
+        log_warn("Frame buffer is empty.")
         return
 
     #latest_frame = frame_buffer[-1]
@@ -234,12 +218,12 @@ def process_and_visualize_latest_frame():
 
     if mode_second_data_set == "OLDEST":
         filtered_frame = frame_buffer[0] # 0 = oldest
-        print("[INFO] Visualizing oldest frame...")
+        log_info("Visualizing oldest frame...")
 
     elif mode_second_data_set == "HIGHPASS":
         #highpass: only keep points that moved certain meters since oldest buffer value
         filtered_frame = apply_highpass_filter(frame_buffer, minMovedMetersThreshold=0.2)
-        print("[INFO] Visualizing high-pass filtered frame...")
+        log_info("Visualizing high-pass filtered frame...")
 
     elif mode_second_data_set == "HIGHPASS+DENOISE":
         #highpass: only keep points that moved certain meters since oldest buffer value
@@ -260,7 +244,7 @@ def process_and_visualize_latest_frame():
     if COUNT_PEOPLE_ENABLED:
         num_people = estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=50)
 
-    #print("[DEBUG] Sample points:\n", filtered_frame[:5])
+    #log_warn("[DEBUG] Sample points:\n", filtered_frame[:5])
     #visualize_frame(selected_frame)
     # draw orignal and manipulated dataset (default + red color)
     visualize_dual_frame(latest_frame, filtered_frame)
@@ -285,11 +269,15 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30)
     """
     global visualizer, drawn_bounding_boxes
 
-    if pointcloud_np.shape[0] == 0:
-        print("[INFO] No dynamic points to analyze.")
+    MAX_INPUT_POINTS = 5000  # prevent cluster scan lockup due to too many points (usually when filter fails) 
+    if pointcloud_np.shape[0] > MAX_INPUT_POINTS:
+        log_warn(f"Too many points (points={pointcloud_np.shape[0]} max={MAX_INPUT_POINTS}), skipping people detection (prevent lockup/freeze from clustering)")
+        #TODO: clear boxes?
         return 0
 
-    # TODO: cancel when taking too long - hangs for several seconds when many points as input (e.g. filter off or loss)
+    if pointcloud_np.shape[0] == 0:
+        log_info("No dynamic points to analyze.")
+        return 0
 
 
     # Step 2: Cluster the filtered points
@@ -298,7 +286,7 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30)
     labels = np.array(pcd.cluster_dbscan(eps=distance_threshold, min_points=min_points, print_progress=False))
 
     if labels.size == 0 or np.max(labels) < 0:
-        print("[INFO] No clusters found.")
+        log_info("No clusters found.")
         return 0
 
     unique_labels, counts = np.unique(labels, return_counts=True)
@@ -328,7 +316,7 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30)
             visualizer.add_geometry(bbox, reset_bounding_box=False)
             drawn_bounding_boxes.append(bbox)
 
-    print(f"[INFO] Estimated number of moving people: {valid_clusters}")
+    log_info(f"Estimated number of moving people: {valid_clusters}")
     return valid_clusters
 
 
@@ -342,6 +330,6 @@ if __name__ == "__main__":
     initialize_visualizer()
     simulate_stream_input(pcap_path)
 
-    print("[INFO] Stream ended. Closing window.")
+    log_info("Stream ended. Closing window.")
     visualizer.destroy_window()
 
