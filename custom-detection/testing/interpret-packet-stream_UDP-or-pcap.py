@@ -50,10 +50,11 @@ def log_debug(msg):
 # Custom function for decoding and accumulating multiple UDP packets for full decoded pointcloud (one scan frame)
 from collections import namedtuple
 ResultTuple = namedtuple("StampCloudTuple", ("stamp", "points"))
-
+udp_packet_count = 0
 def decode_packet(data, src_ip, src_port):
-    log_debug(f"Received {len(data)} bytes from {src_ip}:{src_port} → {UDP_IP}:{UDP_PORT}")
+    #log_debug(f"Received {len(data)} bytes from {src_ip}:{src_port} → {UDP_IP}:{UDP_PORT}")
     global decoder  # if decoder is defined globally
+    global udp_packet_count
     # You may optionally timestamp here
     host_stamp = time.time()
 
@@ -61,11 +62,17 @@ def decode_packet(data, src_ip, src_port):
         log_warn("Skipping malformed packet of unexpected size.")
         return None
 
+    udp_packet_count = udp_packet_count + 1
     result = decoder.decode(host_stamp, data, as_pcl_structs=False)
     if result is not None:
-        log_info("Frame decoded completely")
+        log_info(f"Frame decoded completely (out of {udp_packet_count} UDP packets)")
+        udp_packet_count = 0
         return ResultTuple(*result)
     return None
+
+
+frame_count = 0
+
 
 
 
