@@ -6,13 +6,28 @@ import velodyne_decoder as vd
 #################
 ##### INPUT #####
 #################
+
+#=== UDP Stream ===
 UDP_IP = "0.0.0.0"
 UDP_PORT = 5001
 
-USE_PCAP = True
-#PCAP_FILE = "../../data/testdata/2025.05.16_wireshark-dump_sensor-on-desk.pcap"
+#=== Simulate / From PCAP File ===
+USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM = True
+
+#PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
 PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
-FRAME_DELAY = 0.002  # Delay between simulated UDP packets (speed up / slow down replay)
+#PCAP_FILE = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-tripod.pcapng.gz"
+#PCAP_FILE = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-lamp.pcapng.gz"
+
+#PCAP_FILE = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-stativ.pcap"
+
+FRAME_DELAY = 0.0001  # Delay between simulated UDP packets (speed up / slow down replay)
+# Note: when too large delay the decoder outputs full frame too early
+
+# Ignore packets that dont have this target port - set to None to disable this filter
+# useful when using unfiltered wireshark dumps, prevents warning spam and decoder confusion
+PCAP_FILE_FILTER_UDP_PORT = None
+
 
 
 
@@ -26,7 +41,7 @@ COUNT_PEOPLE_DRAW_BOXES = True
 
 # what should be drawn as second RED pointcloud: (is also used as input for detecting people)
 MODE_SECOND_DATA_SET = "HIGHPASS+DENOISE"
-MODE_SECOND_DATA_SET = "HIGHPASS+CROP+DENOISE"
+#MODE_SECOND_DATA_SET = "HIGHPASS+CROP+DENOISE"
 #MODE_SECOND_DATA_SET = "HIGHPASS"
 #MODE_SECOND_DATA_SET = "OLDEST" # to test buffer size
 

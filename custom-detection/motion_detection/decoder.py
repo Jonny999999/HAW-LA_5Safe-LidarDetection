@@ -22,7 +22,7 @@ def decode_loop(frame_queue):
 
         # check for corrent size
         if len(packet) != vd.PACKET_SIZE:
-            log_warn("[decoder] Skipping malformed packet of unexpected size.")
+            log_warn(f"[decoder] Skipping malformed packet of unexpected size. (expected {vd.PACKET_SIZE} but received {len(packet)})")
             continue
         else:
             udp_packet_count += 1
