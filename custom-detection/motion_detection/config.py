@@ -15,9 +15,9 @@ UDP_PORT = 5001
 USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM = True
 
 #PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
-PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
-#PCAP_FILE = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-tripod.pcapng.gz"
-#PCAP_FILE = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-lamp.pcapng.gz"
+#PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
+#PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
 
 #PCAP_FILE = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-stativ.pcap"
 
