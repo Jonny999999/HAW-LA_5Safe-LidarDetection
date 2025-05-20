@@ -26,9 +26,19 @@ COUNT_PEOPLE_DRAW_BOXES = True
 
 # what should be drawn as second RED pointcloud: (is also used as input for detecting people)
 MODE_SECOND_DATA_SET = "HIGHPASS+DENOISE"
+MODE_SECOND_DATA_SET = "HIGHPASS+CROP+DENOISE"
 #MODE_SECOND_DATA_SET = "HIGHPASS"
 #MODE_SECOND_DATA_SET = "OLDEST" # to test buffer size
 
+# used in crop filter
+CROP_POINTCLOUD_POLYGON = [
+    (0.5, 0),  # bottom left
+    (-5.2, -4.7),   # bottom right
+    (3.3, -12),  # top right
+    (7.6, -6.6)    # top left
+]
+# for determining the crop polygon its a good idea to log the current pointcloud edges
+CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False
 
 
 ################

@@ -1,7 +1,7 @@
 import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
-from utils import log_warn, log_debug
+from utils import log_warn, log_debug, log_info
 
 
 # ===============================
@@ -72,3 +72,53 @@ def remove_isolated_points(points, nb_points=3, radius=0.2):
     log_debug(f"DENOISE: Removed isolated points. Kept {len(filtered_points)} of {len(points)}.")
     return filtered_points
 
+
+
+from shapely.geometry import Polygon, Point
+
+def crop_points_within_xy_polygon(points, polygon_xy, visualizer=None, draw_box=False):
+    """
+    Filters out all 3D points whose (x, y) coordinates lie outside the given 2D polygon.
+
+    Args:
+        points (np.ndarray): Input N x 3 point cloud
+        polygon_xy (list): List of 4 (x, y) tuples defining the polygon
+        visualizer (Visualizer, optional): Open3D visualizer to draw crop box
+        draw_box (bool): Whether to visualize the crop polygon in Open3D
+
+    Returns:
+        np.ndarray: Cropped point cloud (still N x 3)
+    """
+
+        
+    if len(polygon_xy) < 3:
+        raise ValueError("At least 3 XY coordinates required to define a polygon")
+
+    poly = Polygon(polygon_xy)
+    mask = []
+
+    # Test each point's (x, y) location against polygon
+    for pt in points:
+        x, y = pt[0], pt[1]
+        mask.append(poly.contains(Point(x, y)))
+
+    filtered = points[np.array(mask)]
+
+    log_debug(f"CROP: Kept {filtered.shape[0]} of {points.shape[0]} points within polygon.")
+
+    # Optional: draw the polygon as a flat Open3D line loop
+    if draw_box and visualizer is not None:
+        import open3d as o3d
+        # Convert 2D polygon to 3D line set
+        poly_3d = [(x, y, 0.0) for x, y in polygon_xy]
+        poly_3d.append(poly_3d[0])  # close loop
+
+        lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
+        line_set = o3d.geometry.LineSet()
+        line_set.points = o3d.utility.Vector3dVector(poly_3d)
+        line_set.lines = o3d.utility.Vector2iVector(lines)
+        line_set.paint_uniform_color([0.2, 0.8, 0.2])  # green crop region
+
+        visualizer.add_geometry(line_set, reset_bounding_box=False)
+
+    return filtered
