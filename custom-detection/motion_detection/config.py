@@ -15,13 +15,17 @@ UDP_PORT = 5001
 USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM = True
 
 #PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
-#PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
+PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
-PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
-
+#PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
 #PCAP_FILE = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-stativ.pcap"
 
-FRAME_DELAY = 0.0001  # Delay between simulated UDP packets (speed up / slow down replay)
+#Use packet timestamps to playback at original speed if possible
+PCAP_FILE_REALTIME_PLAYBACK = True
+
+# Custom fixed delay between reading frames from file (useful when not playing back in realtime + goal is to speed up / slow down replay)
+#PCAP_FILE_PACKET_DELAY = 0.0001
+PCAP_FILE_PACKET_DELAY = 0 
 # Note: when too large delay the decoder outputs full frame too early
 
 # Ignore packets that dont have this target port - set to None to disable this filter
