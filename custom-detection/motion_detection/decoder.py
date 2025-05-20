@@ -4,6 +4,7 @@ import time
 from config import get_decoder_config
 from receiver import udp_packet_queue
 from utils import log_info, log_warn, log_debug
+from queue import Full
 
 
 
@@ -33,8 +34,15 @@ def decode_loop(frame_queue):
         if result:
             log_debug(f"[decoder] Frame decoded completely ({udp_packet_count} packets)")
             udp_packet_count = 0
-            frame_queue.put(ResultTuple(*result))
-            # TODO: handle full queue (processing cant keep up with sensor data)
+            # Add pointcloud to queue
+            try:
+                frame_queue.put(ResultTuple(*result), block=False)
+            except Full:
+                # Drop oldest to make space
+                dropped = frame_queue.get_nowait()
+                log_warn("[decoder] Frame queue full! (processing thread cant keep up) -> Dropping oldest frame to make room.")
+                frame_queue.put(ResultTuple(*result), block=False)
+
         else:
             #log_debug("[decoder] decoded packet, full scan frame not complete yet")
             pass

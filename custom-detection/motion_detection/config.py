@@ -12,14 +12,14 @@ UDP_PORT = 5001
 USE_PCAP = True
 #PCAP_FILE = "../../data/testdata/2025.05.16_wireshark-dump_sensor-on-desk.pcap"
 PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
-FRAME_DELAY = 0.005  # Delay between simulated UDP packets (speed up / slow down replay)
+FRAME_DELAY = 0.002  # Delay between simulated UDP packets (speed up / slow down replay)
 
 
 
 ###############################
 ##### DETECTION ALGORITHM #####
 ###############################
-POINTCLOUD_HISTORY_BUFFER_SIZE = 20  # Rolling buffer of last N frames
+POINTCLOUD_HISTORY_BUFFER_SIZE = 10  # Rolling buffer of last N frames
 
 COUNT_PEOPLE_ENABLED = True
 COUNT_PEOPLE_DRAW_BOXES = True

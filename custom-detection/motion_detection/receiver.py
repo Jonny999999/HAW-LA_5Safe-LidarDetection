@@ -29,7 +29,7 @@ def _udp_listener():
             data, _ = sock.recvfrom(2048)
             udp_packet_queue.put_nowait(data)
         except queue.Full:
-            log_warn("[receiver] Packet queue full. Dropping UDP packet.")
+            log_warn("[receiver] Packet queue full. (receiving packets faster than decoding) Dropping UDP packet.")
         except Exception as e:
             log_error(f"[receiver] UDP receive error: {e}")
     # socket never closes (daemon thread), no finally needed
@@ -57,6 +57,8 @@ def _pcap_stream_reader():
                     time.sleep(FRAME_DELAY)
             except Exception as pkt_err:
                 log_warn(f"[receiver] Malformed packet skipped: {pkt_err}")
+            except queue.Full:
+                log_warn("[receiver] Packet queue full. (reading from PCAP file faster than decoding) Dropping UDP packet.")
     except Exception as e:
         log_error(f"[receiver] Failed to read PCAP: {e}")
 
