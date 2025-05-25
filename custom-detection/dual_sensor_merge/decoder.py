@@ -2,11 +2,13 @@ import velodyne_decoder as vd
 from collections import namedtuple
 import time
 from config import get_decoder_config
-from utils import log_info, log_warn, log_debug
+from utils import log_info, log_warn, log_debug, log_error
 from queue import Full
 
 from shared_types import StampCloudTuple
 
+from multiprocessing import Queue  # For the Queue class
+from queue import Full, Empty      # For the exceptions
 
 # Custom function for decoding and accumulating multiple UDP packets for full decoded pointcloud (one scan frame)
 
@@ -54,8 +56,8 @@ def decode_loop(frame_queue, udp_packet_queue, sensor_id):
                     timepair, points = result
                     stamp = timepair.host  # or float(timepair), if it supports __float__
                     frame_queue.put(ResultTuple(stamp, points), block=False)
-                except queue.Empty:
-                    log_warn(f"[decoder {sensor_id}] Tried to drop frame but queue was already empty!")
+                except Empty:
+                    log_error(f"[decoder {sensor_id}] Tried to drop frame but queue was already empty! (by other thread)")
                 except Full:
                     log_error(f"[decoder {sensor_id}] Queue still full after dropping — giving up on frame.")
 
@@ -73,7 +75,7 @@ def decode_loop(frame_queue, udp_packet_queue, sensor_id):
 
 from collections import deque
 
-def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=0.01):
+def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=1):
     """
     Synchronizes frames from two sources by timestamp.
     """

@@ -1,18 +1,60 @@
+import numpy as np
 import open3d as o3d
-from utils import log_info
+from utils import log_info, log_warn, log_debug
 import numpy as np
 
-def initialize_visualizer():
-    log_info("Initializing Open3D visualizer window...")
+
+
+
+def initialize_visualizer(title="LiDAR Viewer", width=1280, height=720):
+    log_info(f"Initializing visualizer: {title}")
     visualizer = o3d.visualization.Visualizer()
-    visualizer.create_window(window_name="LiDAR Streaming", width=1280, height=720)
+    visualizer.create_window(window_name=title, width=width, height=height)
     return visualizer
 
 
 
-# ===============================
-# === VISUALIZATION
-# ===============================
+
+
+
+# keep track of which PointClouds have been added
+_added_pcds = set()
+
+def visualize_single_frame(points, visualizer, pcd_ref, color):
+    points = np.asarray(points)
+
+    # Automatically slice down to 3D if needed
+    if points.ndim == 2 and points.shape[1] > 3:
+        #log_debug(f"[visualizer] Trimming point data from shape {points.shape} to (N, 3) for visualization.")
+        points = points[:, :3]
+
+    # Ensure it's (N, 3)
+    if points.ndim != 2 or points.shape[1] != 3:
+        log_warn(f"[visualizer] Invalid point array shape: {points.shape} — skipping frame.")
+        return
+
+    if points.size == 0:
+        return
+
+    pcd_ref.points = o3d.utility.Vector3dVector(points.astype(np.float64))
+    pcd_ref.paint_uniform_color(color)
+    visualizer.update_geometry(pcd_ref)
+
+    # on first use only: add to scene
+    pid = id(pcd_ref)
+    if pid not in _added_pcds:
+        visualizer.add_geometry(pcd_ref)
+        _added_pcds.add(pid)
+
+    visualizer.poll_events()
+    visualizer.update_renderer()
+
+
+
+
+
+
+
 geometry_added = False
 pcd_raw = o3d.geometry.PointCloud()
 pcd_filtered = o3d.geometry.PointCloud()
@@ -36,6 +78,14 @@ def visualize_dual_frame(raw_points, filtered_points, visualizer):
         log_warn(" Both frames empty, skipping visualization.")
         return
 
+    # Automatically slice down to 3D if needed
+    if filtered_points.ndim == 2 and filtered_points.shape[1] > 3:
+        #log_debug(f"[visualizer] Trimming point data from shape {points.shape} to (N, 3) for visualization.")
+        filtered_points = filtered_points[:, :3]
+    # Automatically slice down to 3D if needed
+    if raw_points.ndim == 2 and raw_points.shape[1] > 3:
+        #log_debug(f"[visualizer] Trimming point data from shape {points.shape} to (N, 3) for visualization.")
+        raw_points = raw_points[:, :3]
 
     # if both pointclouds are provided, remove equal points from raw_points cloud so filtered_points are always visible (draw order seems random, sometimes red points not visible at all)
     if raw_points.size > 0 and filtered_points.size > 0:

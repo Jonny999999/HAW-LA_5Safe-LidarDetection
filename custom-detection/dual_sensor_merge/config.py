@@ -18,7 +18,7 @@ USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM = True
 #PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
 PCAP_FILE_1 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
-PCAP_FILE_2 = "../../data/testdata/2025.05.20_dual-sensor-test_sensor-stativ.pcap"
+PCAP_FILE_2 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
 
 #Use packet timestamps to playback at original speed if possible
 PCAP_FILE_REALTIME_PLAYBACK = True
