@@ -2,12 +2,13 @@ import socket
 import threading
 import gzip
 from queue import Queue
+import queue
 from scapy.utils import RawPcapReader
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
 import time
 
-from config import UDP_IP, UDP_PORT, PCAP_FILE, POINTCLOUD_HISTORY_BUFFER_SIZE, USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, PCAP_FILE_PACKET_DELAY, PCAP_FILE_FILTER_UDP_PORT, PCAP_FILE_REALTIME_PLAYBACK
+from config import UDP_IP, UDP_PORT, PCAP_FILE_1, POINTCLOUD_HISTORY_BUFFER_SIZE, USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, PCAP_FILE_PACKET_DELAY, PCAP_FILE_FILTER_UDP_PORT, PCAP_FILE_REALTIME_PLAYBACK
 from utils import log_info, log_warn, log_error
 
 # Thread-safe queue for decoded UDP packets
@@ -39,7 +40,7 @@ def _udp_listener():
 
 
 ## --- PCAP reading mode ---
-def _pcap_stream_reader():
+def _pcap_stream_reader(pcap_path, packet_queue, sensor_id):
     """
     PCAP mode: Streams raw packets from a PCAP file (supports .pcap and .pcap.gz).
     Replays packets using original capture timing, with optional additional delay.
@@ -49,12 +50,12 @@ def _pcap_stream_reader():
     no_match_counter = 0
     replay_start_time = time.time()
     pcap_start_time = None
-    log_info(f"[receiver] Streaming packets from PCAP file: {PCAP_FILE}")
+    log_info(f"[receiver {sensor_id}] Streaming packets from PCAP file: {PCAP_FILE_1}")
     
     try:
         # Detect .gz and open accordingly
-        open_func = gzip.open if PCAP_FILE.endswith(".gz") else open
-        with open_func(PCAP_FILE, 'rb') as f:
+        open_func = gzip.open if PCAP_FILE_1.endswith(".gz") else open
+        with open_func(PCAP_FILE_1, 'rb') as f:
             reader = RawPcapReader(f)
             for pkt_data, pkt_metadata in reader:
                 try:
@@ -72,7 +73,7 @@ def _pcap_stream_reader():
                                 now = time.time()
                                 sleep_time = target_time - now
                                 if sleep_time > MAX_PACKET_DELAY_MS:
-                                    log_warn(f"[receiver] pcap file contains packets with a {sleep_time} ms pause. Limiting delay to threshold of {MAX_PACKET_DELAY_MS} ms")
+                                    log_warn(f"[receiver {sensor_id}] pcap file contains packets with a {sleep_time} ms pause. Limiting delay to threshold of {MAX_PACKET_DELAY_MS} ms")
                                     time.sleep(MAX_PACKET_DELAY_MS)
                                 elif sleep_time > 0:
                                     time.sleep(sleep_time)
@@ -81,32 +82,36 @@ def _pcap_stream_reader():
                                 time.sleep(PCAP_FILE_PACKET_DELAY)
 
                             data = bytes(udp_layer.payload)
-                            udp_packet_queue.put_nowait(data)
+                            packet_queue.put_nowait(data)
                             no_match_counter = 0 # reset error count at valid packet
                         else:
                             no_match_counter += 1
                             if no_match_counter >= NO_MATCH_WARNING_THRESHOLD:
-                                log_warn(f"[receiver] No packets matched UDP port {PCAP_FILE_FILTER_UDP_PORT} for {NO_MATCH_WARNING_THRESHOLD} packets!")
+                                log_warn(f"[receiver {sensor_id}] No packets matched UDP port {PCAP_FILE_FILTER_UDP_PORT} for {NO_MATCH_WARNING_THRESHOLD} packets!")
                                 log_warn("-> hint: verify sensor port, or set 'PCAP_FILE_FILTER_UDP_PORT' to 'None' to skip this filter")
-                except Exception as pkt_err:
-                    log_warn(f"[receiver] Malformed packet skipped: {pkt_err}")
                 except queue.Full:
-                    log_warn("[receiver] Packet queue full. Dropping UDP packet.")
+                    pass
+                    #log_warn(f"[receiver {sensor_id}] Packet queue full. Dropping UDP packet.")
+                except Exception as pkt_err:
+                    log_warn(f"[receiver {sensor_id}] Malformed packet skipped: {pkt_err}")
     except Exception as e:
-        log_error(f"[receiver] Failed to read PCAP: {e}")
+        log_error(f"[receiver {sensor_id}] Failed to read PCAP: {e}")
 
 
 
 
 
 
-def start_receiver():
+def start_receiver_thread(pcap_path, packet_queue, sensor_id):
     """
     Starts the appropriate reader thread based on config (UDP or PCAP).
     """
     mode = "PCAP" if USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM else "UDP"
-    log_info(f"[receiver] Starting receiver thread in {mode} mode...")
+    log_info(f"[receiver {sensor_id}] Starting receiver thread in {mode} mode...")
 
-    target_func = _pcap_stream_reader if USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM else _udp_listener
-    t = threading.Thread(target=target_func, daemon=True)
+    # TODO: add support for UDP Stream
+    # target_func = _pcap_stream_reader if USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM else _udp_listener
+    # t = threading.Thread(target=target_func, daemon=True)
+    t = threading.Thread(target=_pcap_stream_reader, args=(pcap_path, packet_queue, sensor_id), daemon=True)
+
     t.start()

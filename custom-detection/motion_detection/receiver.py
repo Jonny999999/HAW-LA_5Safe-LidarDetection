@@ -7,7 +7,7 @@ from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
 import time
 
-from config import UDP_IP, UDP_PORT, PCAP_FILE, POINTCLOUD_HISTORY_BUFFER_SIZE, USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, PCAP_FILE_PACKET_DELAY, PCAP_FILE_FILTER_UDP_PORT, PCAP_FILE_REALTIME_PLAYBACK
+from config import UDP_IP, UDP_PORT, PCAP_FILE_1, POINTCLOUD_HISTORY_BUFFER_SIZE, USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, PCAP_FILE_PACKET_DELAY, PCAP_FILE_FILTER_UDP_PORT, PCAP_FILE_REALTIME_PLAYBACK
 from utils import log_info, log_warn, log_error
 
 # Thread-safe queue for decoded UDP packets
@@ -49,12 +49,12 @@ def _pcap_stream_reader():
     no_match_counter = 0
     replay_start_time = time.time()
     pcap_start_time = None
-    log_info(f"[receiver] Streaming packets from PCAP file: {PCAP_FILE}")
+    log_info(f"[receiver] Streaming packets from PCAP file: {PCAP_FILE_1}")
     
     try:
         # Detect .gz and open accordingly
-        open_func = gzip.open if PCAP_FILE.endswith(".gz") else open
-        with open_func(PCAP_FILE, 'rb') as f:
+        open_func = gzip.open if PCAP_FILE_1.endswith(".gz") else open
+        with open_func(PCAP_FILE_1, 'rb') as f:
             reader = RawPcapReader(f)
             for pkt_data, pkt_metadata in reader:
                 try:
