@@ -24,9 +24,37 @@ The project also includes visualization, post-processing, and tools for analyzin
 - `scripts/`: Helper tools and conversion scripts
 
 
+## Current Python projects 
+
+### 1. motion_detection
+
+A Python-based motion detection tool that filters dynamic points and estimates the number of people using clustering. Reads from UDP or `.pcap` files and visualizes detection live.
+
+![Motion Detection Tool](doc/screenshots/py_motion-detection.jpg)
+
+Location: `custom-detection/motion_detection/`
+
+---
+
+### 2. dual_sensor_merge utility
+
+A flexible utility to load, interpret, sync, and visualize LiDAR data from **two sensors simultaneously**. Useful for calibration and preparing training datasets from merged fields of view.
+
+![Dual Sensor Merge Utility](doc/screenshots/py_sensor-merge-utility_2.jpg)
+
+Location: `custom-detection/dual_sensor_merge/`
+
+Features:
+- Supports `.pcap` or live UDP streaming
+- Frame-by-frame playback and pause/step mode
+- Point picking with 3D coordinate logging
+- Planned transformation + export for AI training
+
+---
+
+
+
 # Installation
-
-
 ## Repo setup - Install Git LFS:
 For the testdata files in the `data/` folder (like recorded LiDAR logs) to work, **Git LFS must be installed** — otherwise, you'll only get pointer files instead of real content.
 

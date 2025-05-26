@@ -3,7 +3,7 @@ from queue import Queue
 from collections import deque
 import time
 
-from config import USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, PCAP_FILE, POINTCLOUD_HISTORY_BUFFER_SIZE
+from config import USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, POINTCLOUD_HISTORY_BUFFER_SIZE
 from receiver import start_receiver
 from decoder import decode_loop
 from processor import process_and_visualize_latest_frame
