@@ -7,9 +7,11 @@ from config import USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, PCAP_FILE_1, PCAP_FILE_2
 from receiver import start_receiver_thread
 from decoder import decode_loop, frame_synchronizer
 from processor import process_and_visualize_latest_frame
-from visualizer import initialize_visualizer, visualize_single_frame, visualize_dual_frame
+from visualizer import initialize_visualizer, visualize_single_frame, visualize_dual_frame, pick_point_from_cloud
 from utils import log_info, log_warn, log_debug
 from shared_types import StampCloudTuple
+#from playback import register_playback_controls, should_advance_frame, log_picked_points
+from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
 
 import queue
 #from queue import Queue
@@ -17,6 +19,7 @@ import queue
 
 from multiprocessing import Process
 from multiprocessing import Queue
+
 
 
 def main():
@@ -32,8 +35,8 @@ def main():
     # === Queue 2: Completed 360° scan point clouds ===
     # Filled by: decode.py -> decode_loop() 
     # Read by: frame_synchroniser thread
-    decoded_pointcloud_frames_queue_1 = Queue(maxsize=10)
-    decoded_pointcloud_frames_queue_2 = Queue(maxsize=10)
+    decoded_pointcloud_frames_queue_1 = Queue(maxsize=200)
+    decoded_pointcloud_frames_queue_2 = Queue(maxsize=200)
 
 
     ### # === Rolling buffer for motion filtering ===
@@ -83,15 +86,47 @@ def main():
     pcd2 = o3d.geometry.PointCloud()
     pcd_merged = o3d.geometry.PointCloud()
 
-    # repeatedly update visualizers with synced pointcloud
-    while True:
-        # wait for synced pointclouds
-        stamp, pc1, pc2 = synced_frame_queue.get()
-        log_info(f"[main] Synced frame at {stamp:.3f}s")
 
-        # show each individually
-        visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])  # blue
-        visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])  # orange
+    # === Start Thread for terminal input ===
+    # create thread for parsing terminal user input (payback_control)
+    start_playback_input_thread()
+
+
+
+    # === Main loop ===
+    # update visualizer windows
+    # handle play/pause/launch-point-picker
+    while True:
+        # Check if a pick was requested by terminal input
+        pick_req = get_pick_request() # by entering e.g. "pick1" in console and pressing enter
+        if pick_req:
+            log_info(f"[main] Executing pick request for {pick_req}")
+            if pick_req == "sensor1":
+                idxs = pick_point_from_cloud(pc1, "Sensor 1")
+                log_warn(f"[main] Picked indices of Sensor1: {idxs}, Resuming main loop")
+            elif pick_req == "sensor2":
+                idxs = pick_point_from_cloud(pc2, "Sensor 2")
+                log_warn(f"[main] Picked indices of Sensor2: {idxs}, Resuming main loop")
+            clear_pick_request()
+            continue  # wait until resumed
+
+        # check if paused
+        if not should_advance_frame():
+            # when paused, no data update, only run handlers (camera control responsive)
+            vis1.poll_events(); vis1.update_renderer()
+            vis2.poll_events(); vis2.update_renderer()
+            vis_merged.poll_events(); vis_merged.update_renderer()
+            time.sleep(0.05)
+            continue # wait until resumed
+
+
+        # pull next synced pointclouds from queue
+        stamp, pc1, pc2 = synced_frame_queue.get()
+
+        # update visualizer windows with new pointclouds
+        log_info(f"[main] Updating views with synced frame from {stamp:.3f}s")
+        visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
+        visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
 
         # Merge
         # TODO add transformation here

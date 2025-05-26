@@ -115,3 +115,22 @@ def visualize_dual_frame(raw_points, filtered_points, visualizer):
 
     visualizer.poll_events()
     visualizer.update_renderer()
+
+
+
+
+
+
+# Function for creating a independent new window with pointcloud for picking a point 
+# (blocks the script until window closed)
+def pick_point_from_cloud(points, title="Pick Points"):
+    """
+    Opens a blocking Open3D editor window for selecting points.
+    Returns list of 3D coordinates (user must press 'q' to close).
+    """
+    pc = o3d.geometry.PointCloud()
+    pc.points = o3d.utility.Vector3dVector(points[:, :3])
+    print(f"[Pick] SHIFT+Click to select points in '{title}', press Q to exit.")
+    picked_indices = o3d.visualization.draw_geometries_with_editing([pc], window_name=title)
+    return picked_indices
+
