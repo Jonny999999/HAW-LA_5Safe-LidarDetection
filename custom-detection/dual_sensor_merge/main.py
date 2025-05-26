@@ -91,6 +91,14 @@ def main():
     # create thread for parsing terminal user input (payback_control)
     start_playback_input_thread()
 
+    # Transformation (Translation and Rotation) Matrix. calculated in calculate_transformation_maxtrix.py based on 3 Points
+    T_static = np.array([
+                    [ 0.62288801, -0.78223369,  0.01099957, -9.16811678],
+                    [ 0.77832635,  0.6210714,   0.09207824, -1.12348435],
+                    [-0.07885822, -0.04879318,  0.99569102, -0.61174572],
+                    [ 0.0,         0.0,         0.0,         1.0]
+    ])
+
 
 
     # === Main loop ===
@@ -123,8 +131,19 @@ def main():
         # pull next synced pointclouds from queue
         stamp, pc1, pc2 = synced_frame_queue.get()
 
+        # splice down pc1 and pc2 to XYZ Coordinates
+        pc1 = pc1[:, :3]	
+        pc2 = pc2[:, :3]	
+        
+
+        # Create Pointcloud from 3 dimensional array
+        pc2_03dpc  = o3d.geometry.PointCloud()
+        pc2_03dpc.points = o3d.utility.Vector3dVector(pc2.astype(np.float64))
+
+
         # update visualizer windows with new pointclouds
         log_info(f"[main] Updating views with synced frame from {stamp:.3f}s")
+
         visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
         visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
 
@@ -133,8 +152,18 @@ def main():
         #merged_points = np.vstack((pc1, pc2))
         #visualize_single_frame(merged_points, vis_merged, pcd_merged, color=[0.7, 0.7, 0.7])  # gray
 
+        
+
+        pc2_03dpc.transform(T_static)
+        # Punktwolken zusammenfügen im Koordinatensystem von Sensor A
+        merged_points = np.vstack((pc1, pc2))
+        # visualize_single_frame(merged_points, vis_merged, pcd_merged, color=[0.7, 0.7, 0.7])  # gray
+
+
+
+
         # draw both clouds (different colors)
-        visualize_dual_frame(pc1, pc2, vis_merged)
+        visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
 
 
 

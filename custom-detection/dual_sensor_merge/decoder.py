@@ -75,7 +75,7 @@ def decode_loop(frame_queue, udp_packet_queue, sensor_id):
 
 from collections import deque
 
-def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=1):
+def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=0.05):
     """
     Synchronizes frames from two sources by timestamp.
     """
