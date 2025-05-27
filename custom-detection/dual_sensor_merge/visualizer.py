@@ -128,9 +128,33 @@ def pick_point_from_cloud(points, title="Pick Points"):
     Opens a blocking Open3D editor window for selecting points.
     Returns list of 3D coordinates (user must press 'q' to close).
     """
+    # convert pointcloud to open3d format
     pc = o3d.geometry.PointCloud()
     pc.points = o3d.utility.Vector3dVector(points[:, :3])
-    print(f"[Pick] SHIFT+Click to select points in '{title}', press Q to exit.")
-    picked_indices = o3d.visualization.draw_geometries_with_editing([pc], window_name=title)
+
+    log_info(f"[Pick] SHIFT+Click to select points in '{title}', press Q to exit.")
+    log_info(f"[Pick] ***close window*** to get selected points logged with ***FULL PRECISION***")
+
+    # create new visualizer with editing enables (-> blocking)
+    vis = o3d.visualization.VisualizerWithEditing()
+    vis.create_window()
+    # draw pointcloud
+    vis.add_geometry(pc)
+    # start blocking, user selects points
+    vis.run()  # user picks points
+    vis.destroy_window()
+
+    # extract indices of selected points
+    picked_indices = vis.get_picked_points()
+    print(f"finished picking points, logging full pcecision coordinates")
+
+    # log all selected points with full precision
+    if picked_indices:
+        points_np = np.asarray(pc.points)
+        coords = [points_np[i] for i in picked_indices]
+        print(f"coords: {coords}")
+        for i, c in zip(picked_indices, coords):
+            print(f"[Pick] Full-precision Coordinates of point-Index {i}: ({c[0]:.9f}, {c[1]:.9f}, {c[2]:.9f})")
+        return picked_indices, coords
     return picked_indices
 
