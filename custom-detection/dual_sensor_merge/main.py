@@ -2,23 +2,23 @@ from collections import deque
 import time
 import numpy as np
 import open3d as o3d
+import os
 
-from config import USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM, PCAP_FILE_1, PCAP_FILE_2, POINTCLOUD_HISTORY_BUFFER_SIZE
+import config as config # import entire config (use with prefix)
 from receiver import start_receiver_thread
 from decoder import decode_loop, frame_synchronizer
 from processor import process_and_visualize_latest_frame
 from visualizer import initialize_visualizer, visualize_single_frame, visualize_dual_frame, pick_point_from_cloud
 from utils import log_info, log_warn, log_debug
 from shared_types import StampCloudTuple
-#from playback import register_playback_controls, should_advance_frame, log_picked_points
 from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
 
 import queue
 #from queue import Queue
 #import threading
 
-from multiprocessing import Process
-from multiprocessing import Queue
+from multiprocessing import Process, Queue
+import multiprocessing
 
 
 
@@ -47,14 +47,28 @@ def main():
 
 
 
-    # === Start packet receiver thread ===
+    # === Start packet receiver processes ===
     # This will feed udp_packet_queue (live UDP or PCAP mode)
-    start_receiver_thread(PCAP_FILE_1, udp_packet_queue_1, sensor_id=1)
-    start_receiver_thread(PCAP_FILE_2, udp_packet_queue_2, sensor_id=2)
     #TODO: handle case only one file defined
+    start_receiver_thread(
+        mode =           config.DATA_RECEIVE_MODE, # either 'UDP' or 'PCAP'
+        packet_queue =   udp_packet_queue_1,
+        sensor_id =      1,
+        pcap_path =      config.PCAP_FILE_1,
+        udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR1,
+        udp_port =       config.UDP_PORT_SENSOR1)
+
+    start_receiver_thread(
+        mode =           config.DATA_RECEIVE_MODE, # either 'UDP' or 'PCAP'
+        packet_queue =   udp_packet_queue_2,
+        sensor_id =      2,
+        pcap_path =      config.PCAP_FILE_2,
+        udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR2,
+        udp_port =       config.UDP_PORT_SENSOR2)
 
 
-    # === Start decoding thread ===
+
+    # === Start decoding processes ===
     # Pulls packets from udp_packet_queue, assembles full scans, pushes to decoded_pointcloud_frames_queue
     # using multiprocessing instead of threading to run on actual cpu cores
     Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_1, udp_packet_queue_1, 1)).start()
@@ -74,7 +88,14 @@ def main():
 
 
 
-    # === Initialize Open3D window ===
+    # === Start Thread for terminal input ===
+    # create thread for parsing terminal user input (payback_control)
+    start_playback_input_thread()
+
+
+
+
+    # === Initialize Open3D windows ===
     ### #visualizer = initialize_visualizer()
     # create 3 visualizer windows
     vis1 = initialize_visualizer("Sensor 1")
@@ -87,9 +108,6 @@ def main():
     pcd_merged = o3d.geometry.PointCloud()
 
 
-    # === Start Thread for terminal input ===
-    # create thread for parsing terminal user input (payback_control)
-    start_playback_input_thread()
 
     # Transformation (Translation and Rotation) Matrix. calculated in calculate_transformation_maxtrix.py based on 3 Points
     T_static = np.array([
@@ -200,4 +218,14 @@ def main():
 
 # call main() when file called directly
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[EXIT] Interrupted from keyboard.")
+        # TODO kill all started processes here
+        for p in multiprocessing.active_children():
+            print(f"[EXIT] Killing process {p.pid}")
+            p.terminate()
+            p.join()
+        print("[EXIT] force-killing script...")
+        os._exit(0)

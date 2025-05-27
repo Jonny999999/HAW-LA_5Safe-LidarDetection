@@ -7,13 +7,25 @@ import velodyne_decoder as vd
 ##### INPUT #####
 #################
 
-#=== UDP Stream ===
-UDP_IP = "0.0.0.0"
-UDP_PORT = 5001
+#=== Input MODE ===
+# Select mode we receive the sensor data
+# "UDP": stream live from UDP (uses UDP_ options)
+# "PCAP": stream from pcap dump file (uses PCAP_ options)
+DATA_RECEIVE_MODE = "PCAP"
+#DATA_RECEIVE_MODE = "UDP"
 
-#=== Simulate / From PCAP File ===
-USE_PCAP_FILE_INSTEAD_OF_UDP_STREAM = True
 
+
+#=== UDP Stream config ===
+UDP_LISTEN_IP_SENSOR1 = "0.0.0.0" # 0.0.0.0 uses all interfaces
+UDP_PORT_SENSOR1 = 5001
+
+UDP_LISTEN_IP_SENSOR2 = "0.0.0.0"
+UDP_PORT_SENSOR2 = 5004
+
+
+
+#=== PCAP Mode config ===
 #PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
@@ -30,7 +42,10 @@ PCAP_FILE_PACKET_DELAY = 0
 
 # Ignore packets that dont have this target port - set to None to disable this filter
 # useful when using unfiltered wireshark dumps, prevents warning spam and decoder confusion
+# FIXME: we need to configure 2 ports when using 2 sensors if used?
 PCAP_FILE_FILTER_UDP_PORT = None
+
+
 
 
 
@@ -58,6 +73,8 @@ CROP_POINTCLOUD_POLYGON = [
 ]
 # for determining the crop polygon its a good idea to log the current pointcloud edges
 CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False
+
+
 
 
 ################
