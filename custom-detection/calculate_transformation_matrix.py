@@ -1,18 +1,42 @@
 import open3d as o3d
 import numpy as np
 
-# Korrespondierende Punkte
+
+# === Configure reference points ===
+
+# 2025.05.28:
+# Determined Reference points during live setup, works for `data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz`
 points_pc1 = np.array([
-    [0.47, -5.8, 0.71],
-    [-0.61, -4, -0.24],
-    [-5, -2.3, -0.58],
+    [-1.855261207, -7.051774979, 0.591801226],  # Greenscreen cabinets
+    [2.209504128, -7.254121304, 0.439154744],   # Greenscreen center
+    [2.961946249, -11.077330589, 0.465429336],  # Greenscreen door
 ])
 
 points_pc2 = np.array([
-    [2.3, -10, 0.87],
-    [3, -8.7, 0.27],
-    [1.7, -4.3, 0.02],
+    [-5.001546383, -6.413216591, 0.660472870],  # Greenscreen cabinets
+    [-2.166234493, -3.555836439, -0.047979854], # Greenscreen center
+    [1.149047494, -5.592765808, 0.164931178],   # Greenscreen door
 ])
+
+
+# 2025.05.26:
+# Extrected reference point from files `data/testdata/2025-05-20_dual-sensor-test_sensor-xxx.pcap.gz`
+# points_pc1 = np.array([
+#     [0.47, -5.8, 0.71],
+#     [-0.61, -4, -0.24],
+#     [-5, -2.3, -0.58],
+# ])
+# 
+# points_pc2 = np.array([
+#     [2.3, -10, 0.87],
+#     [3, -8.7, 0.27],
+#     [1.7, -4.3, 0.02],
+# ])
+
+
+
+
+# === Calculate Transformation matrix ===
 
 # Punktwolken erzeugen
 pcd1 = o3d.geometry.PointCloud()

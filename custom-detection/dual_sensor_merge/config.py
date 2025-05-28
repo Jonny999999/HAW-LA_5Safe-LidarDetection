@@ -3,6 +3,14 @@ import velodyne_decoder as vd
 
 
 
+###   # TODOS 27.05.2025
+###   - PCAP UDP replay time offset in separate threads (use TCP stamps)
+###   - config cleanup (transfer generated matrix e.g. using json parsing)
+###   - cpu usage after decoder? drops
+###   - implement rate limit
+###   - log frame drop stats
+
+
 #################
 ##### INPUT #####
 #################
@@ -29,8 +37,10 @@ UDP_PORT_SENSOR2 = 5004
 #PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
-PCAP_FILE_1 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
-PCAP_FILE_2 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE_1 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
+#PCAP_FILE_2 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+PCAP_FILE_2 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
+PCAP_FILE_1 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
 
 #Use packet timestamps to playback at original speed if possible
 PCAP_FILE_REALTIME_PLAYBACK = True

@@ -28,15 +28,17 @@ def main():
     # Filled by: receiver.py → start_receiver() thread
     # Read by:  decoder.py → decode_loop()
     # 2 packet queues for 2 sensors
-    udp_packet_queue_1 = Queue(maxsize=1000)
-    udp_packet_queue_2 = Queue(maxsize=1000)
+    # TODO: Reduce latency, temporary reduced queue size from 1000 to 100
+    udp_packet_queue_1 = Queue(maxsize=100)
+    udp_packet_queue_2 = Queue(maxsize=100)
 
 
     # === Queue 2: Completed 360° scan point clouds ===
     # Filled by: decode.py -> decode_loop() 
     # Read by: frame_synchroniser thread
-    decoded_pointcloud_frames_queue_1 = Queue(maxsize=200)
-    decoded_pointcloud_frames_queue_2 = Queue(maxsize=200)
+    # TODO: Reduce latency, temporary reduced queue size from 200 to 5
+    decoded_pointcloud_frames_queue_1 = Queue(maxsize=5)
+    decoded_pointcloud_frames_queue_2 = Queue(maxsize=5)
 
 
     ### # === Rolling buffer for motion filtering ===
@@ -78,7 +80,8 @@ def main():
 
     # === Start process for synchronising the decoded frames ===
     # queue for synchronized pointclouds (frames)
-    synced_frame_queue = Queue(maxsize=10)
+    # TODO: Reduce latency, temporary reduced queue size from 10 to 2
+    synced_frame_queue = Queue(maxsize=2)
 
     Process(target=frame_synchronizer, args=(
         decoded_pointcloud_frames_queue_1,
@@ -110,6 +113,9 @@ def main():
 
 
     # Transformation (Translation and Rotation) Matrix. calculated in calculate_transformation_maxtrix.py based on 3 Points
+
+    # 2025.05.26: works for `2025-05-20_dual-sensor-test_sensor-xxx.pcap.gz`
+    # Determined 3 reference points using recorded data
     T_static = np.array([
                     [ 0.62288801, -0.78223369,  0.01099957, -9.16811678],
                     [ 0.77832635,  0.6210714,   0.09207824, -1.12348435],
@@ -117,6 +123,15 @@ def main():
                     [ 0.0,         0.0,         0.0,         1.0]
     ])
 
+
+    # 2025.05.28: works for `data/testdata/2025-05-28_dual-sensor-test_sensor-xxx.pcap.gz`
+    # Determined 3 reference points during live sensor setup
+    T_static = np.array([
+                 [ 0.66810762, 0.7309481, -0.13909377, 6.27345587],
+                 [-0.74305003, 0.66519418,-0.07343942,-6.48224065],
+                 [ 0.03884396, 0.15241907, 0.98755232, 1.1114492 ],
+                 [ 0,          0,          0,          1        ],
+    ])
 
 
     # === Main loop ===
