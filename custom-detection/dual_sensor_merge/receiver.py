@@ -27,7 +27,8 @@ def _udp_listener(udp_ip_addr, udp_port, packet_queue, sensor_id):
     while True:
         try:
             data, _ = sock.recvfrom(2048) # TODO: adjust to actual packet length?
-            packet_queue.put_nowait(data)
+            timestamp = time.time() # store time packet was received (used for pointcloud synchronization)
+            packet_queue.put_nowait((timestamp, data))
         except queue.Full:
             log_warn(f"[receiver-{sensor_id}] Packet queue full. (receiving packets faster than decoding) Dropping UDP packet.")
         except Exception as e:
@@ -79,8 +80,9 @@ def _pcap_stream_reader(pcap_path, packet_queue, sensor_id):
                             if PCAP_FILE_PACKET_DELAY > 0:
                                 time.sleep(PCAP_FILE_PACKET_DELAY)
 
-                            data = bytes(udp_layer.payload)
-                            packet_queue.put_nowait(data)
+                            data = bytes(udp_layer.payload) # acutal packet data
+                            timestamp = pkt_metadata.sec + pkt_metadata.usec / 1e6  # Absolute timestamp from PCAP
+                            packet_queue.put_nowait((timestamp, data))
                             no_match_counter = 0 # reset error count at valid packet
                         else:
                             no_match_counter += 1
