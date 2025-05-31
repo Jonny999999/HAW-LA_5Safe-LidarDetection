@@ -2,7 +2,7 @@ import numpy as np
 import open3d as o3d
 from utils import log_info, log_warn, log_debug
 import numpy as np
-
+from scipy.spatial import cKDTree
 
 
 
@@ -51,7 +51,52 @@ def visualize_single_frame(points, visualizer, pcd_ref, color):
 
 
 
+# plain stupid but inefficient way to remove duplicates (102% cpu)
+# TODO: unused function, drop this?
+def remove_exact_duplicates(raw, filtered):
+    """
+    Removes rows from `raw` that exactly match any row in `filtered`.
+    Returns the pointcloud the duplicates were removed
+    """
+    if raw.size == 0 or filtered.size == 0:
+        return raw
 
+    # Ensure both are (N, 3)
+    raw = np.asarray(raw)
+    filtered = np.asarray(filtered)
+    assert raw.shape[1] == 3 and filtered.shape[1] == 3
+
+    # Round for floating-point tolerance
+    decimals = 4
+    raw_rounded = np.round(raw, decimals=decimals)
+    filtered_rounded = np.round(filtered, decimals=decimals)
+
+    # Convert to structured arrays
+    raw_view = raw_rounded.view(dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')]).reshape(-1)
+    filt_view = filtered_rounded.view(dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4')]).reshape(-1)
+
+    # Fast row-wise comparison
+    mask = ~np.isin(raw_view, filt_view)
+
+    return raw[mask]
+
+
+
+
+# More efficient/optimized way of removing duplicate points (30% cpu)
+def remove_near_duplicates(raw, filtered, threshold=0.001):
+    """
+    Removes points from `raw` that are less than threshold spaced from any point in `filtered`.
+    Returns the pointcloud the duplicates were removed
+    """
+    if raw.size == 0 or filtered.size == 0:
+        return raw
+
+    tree = cKDTree(filtered)
+    distances, _ = tree.query(raw, distance_upper_bound=threshold)
+
+    mask = distances > threshold  # Keep only raw points not near any filtered point
+    return raw[mask]
 
 
 
@@ -90,10 +135,8 @@ def visualize_dual_frame(raw_points, filtered_points, visualizer):
     # if both pointclouds are provided, remove equal points from raw_points cloud so filtered_points are always visible (draw order seems random, sometimes red points not visible at all)
     if raw_points.size > 0 and filtered_points.size > 0:
         # Remove raw points that are exactly in filtered_points
-        raw_set = set(map(tuple, raw_points))
-        filt_set = set(map(tuple, filtered_points))
-        visible_raw_points = np.array(list(raw_set - filt_set))
-        raw_points = visible_raw_points
+        #raw_points = remove_exact_duplicates(raw_points, filtered_points) # this is very inefficient (cpu >100%)
+        raw_points = remove_near_duplicates(raw_points, filtered_points)
 
     if raw_points.size > 0:
         pcd_raw.points = o3d.utility.Vector3dVector(raw_points.astype(np.float64))
