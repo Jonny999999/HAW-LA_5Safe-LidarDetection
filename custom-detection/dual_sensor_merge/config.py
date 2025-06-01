@@ -43,11 +43,11 @@ PCAP_FILE_2 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.
 PCAP_FILE_1 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
 
 #Use packet timestamps to playback at original speed if possible
-PCAP_FILE_REALTIME_PLAYBACK = False
+PCAP_FILE_REALTIME_PLAYBACK = True
 
 # Custom fixed delay between reading frames from file (useful when not playing back in realtime + goal is to speed up / slow down replay)
 #PCAP_FILE_PACKET_DELAY = 0.0001
-PCAP_FILE_PACKET_DELAY = 0 
+PCAP_FILE_PACKET_DELAY = 0
 # Note: when too large delay the decoder outputs full frame too early
 
 # Ignore packets that dont have this target port - set to None to disable this filter

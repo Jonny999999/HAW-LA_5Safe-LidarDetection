@@ -3,6 +3,7 @@ import time
 import numpy as np
 import open3d as o3d
 import os
+import laspy
 
 import config as config # import entire config (use with prefix)
 from receiver import start_receiver_thread
@@ -37,8 +38,8 @@ def main():
     # Filled by: decode.py -> decode_loop() 
     # Read by: frame_synchroniser thread
     # TODO: Reduce latency, temporary reduced queue size from 200 to 5
-    decoded_pointcloud_frames_queue_1 = Queue(maxsize=5)
-    decoded_pointcloud_frames_queue_2 = Queue(maxsize=5)
+    decoded_pointcloud_frames_queue_1 = Queue(maxsize=500)
+    decoded_pointcloud_frames_queue_2 = Queue(maxsize=500)
 
 
     ### # === Rolling buffer for motion filtering ===
@@ -219,7 +220,7 @@ def main():
 
     # ------------- Erstellung der Dateien aus merged point cloud 
     
-    output_dir = "output_frames"
+    output_dir = "output/laz"
     os.makedirs(output_dir, exist_ok=True)
     if config.FILE_EXPORT_ENABLE:
         if all_merged_points:  # nur wenn überhaupt etwas gesammelt wurde
@@ -227,13 +228,25 @@ def main():
             log_info(f"[main] Saving {num_frames} individual frame pointclouds...")
 
             for i, merged_points in enumerate(all_merged_points):
-                merged_pcd = o3d.geometry.PointCloud()
-                merged_pcd.points = o3d.utility.Vector3dVector(merged_points.astype(np.float32))
-                filename = os.path.join(output_dir, f"frame_{i:04d}.ply")
-                o3d.io.write_point_cloud(filename, merged_pcd, write_ascii=False)
+                points = merged_points.astype(np.float32)
 
-            log_info("[main] All frame-wise pointclouds saved successfully.")
-            log_info(f"[main] Total frames written: {num_frames}")
+                header = laspy.LasHeader(point_format=3, version="1.4")
+                las = laspy.LasData(header)
+
+                # LAS expects scaled integers internally, so set scale to 0.001 for mm precision
+                header.scales = [0.001, 0.001, 0.001]
+                header.offsets = [0.0, 0.0, 0.0]
+
+                las.x = points[:, 0]
+                las.y = points[:, 1]
+                las.z = points[:, 2]
+
+                filename = os.path.join(output_dir, f"frame_{i:04d}.laz")
+                las.write(filename)  # auto compress to .laz if laszip is installed
+
+
+            log_info("Frames saved")
+
         else:
             log_warn("[main] No pointclouds merged. Nothing to save.")
 
