@@ -76,13 +76,17 @@ MODE_SECOND_DATA_SET = "HIGHPASS+DENOISE"
 #MODE_SECOND_DATA_SET = "HIGHPASS"
 #MODE_SECOND_DATA_SET = "OLDEST" # to test buffer size
 
+
 # used in crop filter
 CROP_POINTCLOUD_POLYGON = [
-    (0.5, 0),  # bottom left
-    (-5.2, -4.7),   # bottom right
-    (3.3, -12),  # top right
-    (7.6, -6.6)    # top left
+    (0.069658042, -0.195796701), # Sensor 1
+    (-4.188545, -5.2361961), # Schrank 6
+    (2.691041753, -11.679826846), # Tür
+    (7.267323630, -6.364732371) # Sensor 2
 ]
+# TODO: add variable to enable polygon cropping
+
+
 # for determining the crop polygon its a good idea to log the current pointcloud edges
 CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False
 

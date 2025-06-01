@@ -13,6 +13,7 @@ from visualizer import initialize_visualizer, visualize_single_frame, visualize_
 from utils import log_info, log_warn, log_debug
 from shared_types import StampCloudTuple
 from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
+import filters as filters
 
 import queue
 #from queue import Queue
@@ -117,6 +118,7 @@ def main():
 
     # 2025.05.26: works for `2025-05-20_dual-sensor-test_sensor-xxx.pcap.gz`
     # Determined 3 reference points using recorded data
+    # TODO: outsource transformation matrix to CONFIG, or even separate .json file for automatic transfer
     T_static = np.array([
                     [ 0.62288801, -0.78223369,  0.01099957, -9.16811678],
                     [ 0.77832635,  0.6210714,   0.09207824, -1.12348435],
@@ -127,6 +129,7 @@ def main():
 
     # 2025.05.28: works for `data/testdata/2025-05-28_dual-sensor-test_sensor-xxx.pcap.gz`
     # Determined 3 reference points during live sensor setup
+    # TODO: outsource transformation matrix to CONFIG, or even separate .json file for automatic transfer
     T_static = np.array([
                  [ 0.66810762, 0.7309481, -0.13909377, 6.27345587],
                  [-0.74305003, 0.66519418,-0.07343942,-6.48224065],
@@ -181,16 +184,15 @@ def main():
         # splice down pc1 and pc2 to XYZ Coordinates
         pc1 = pc1[:, :3]	
         pc2 = pc2[:, :3]	
-        
 
         # Create Pointcloud from 3 dimensional array
         pc2_03dpc  = o3d.geometry.PointCloud()
         pc2_03dpc.points = o3d.utility.Vector3dVector(pc2.astype(np.float64))
 
 
+        # === Update single sensor visualization ===
         # update visualizer windows with new pointclouds
         log_info(f"[main] Updating views with synced frame from {stamp:.3f}s")
-
         visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
         visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
 
@@ -198,28 +200,50 @@ def main():
         # TODO add transformation here
         #merged_points = np.vstack((pc1, pc2))
         #visualize_single_frame(merged_points, vis_merged, pcd_merged, color=[0.7, 0.7, 0.7])  # gray
-
         
 
+        # === Apply transformation ===
         pc2_03dpc.transform(T_static)
         # Punktwolken zusammenfügen im Koordinatensystem von Sensor A
+
+
+        # === Merge pointclouds ===
         merged_points = np.vstack((pc1, np.asarray(pc2_03dpc.points)))
         # visualize_single_frame(merged_points, vis_merged, pcd_merged, color=[0.7, 0.7, 0.7])  # gray
 
+
+        # === Filter relevant points ===
+        # filter out points outside of the configured polygon (config.py)
+        # also drop points that are above certain z coordinate (1m)
+        cropped_points = filters.crop_points_within_xy_polygon(merged_points, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=vis_merged, draw_box=True, z_max_height_threshold=1)
+
+
+        # === Visualize transformed,merged,cropped points ===
+        # draw both clouds (different colors)
+        if False:
+            # visualize sensor merge (points sensor1 + transformed points sensor2 in red)
+            visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
+        else:
+            # visualize applied point filtering (all merged-points + points after crop in red)
+            visualize_dual_frame(merged_points, cropped_points, vis_merged)
+
+
+        # === Track finished frames ===
+        # TODO: remove this, instead call e.g. create_laz_file_from_pointcloud() when FILE_EXPORT_ENABLE is set
         # add Frame to all_merged_points list
         if config.FILE_EXPORT_ENABLE:
-            if save >= 2:
-                all_merged_points.append(merged_points)
+            if save >= 6:
+                #all_merged_points.append(merged_points)
+                all_merged_points.append(cropped_points)
                 save = 0
             else:
                 save += 1
 
-        # draw both clouds (different colors)
-        visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
 
 
     # ------------- Erstellung der Dateien aus merged point cloud 
     
+    # TODO: outsource this, also run per frame instead of at the end
     output_dir = "output/laz"
     os.makedirs(output_dir, exist_ok=True)
     if config.FILE_EXPORT_ENABLE:
