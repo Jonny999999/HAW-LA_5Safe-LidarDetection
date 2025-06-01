@@ -33,3 +33,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+
+# Project specific folders
+output_frames/

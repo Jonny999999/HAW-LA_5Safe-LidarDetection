@@ -134,6 +134,11 @@ def main():
     ])
 
 
+    # -------------- Initialisiere Liste für das Ablegen der merged Pointcloud:
+    all_merged_points = []
+
+    save = 0
+
     # === Main loop ===
     # update visualizer windows
     # handle play/pause/launch-point-picker
@@ -162,7 +167,15 @@ def main():
 
 
         # pull next synced pointclouds from queue
-        stamp, pc1, pc2 = synced_frame_queue.get()
+        # stamp, pc1, pc2 = synced_frame_queue.get()
+
+
+        # --------------- TESTING Ende der Datei erkennen. durch warten von einigen Sekunden und dann Abbruch
+        try:
+            stamp, pc1, pc2 = synced_frame_queue.get(timeout=5.0)  # 5 Sekunden warten
+        except queue.Empty:
+            log_info("[main] No more frames in synced_frame_queue. Exiting loop.")
+            break
 
         # splice down pc1 and pc2 to XYZ Coordinates
         pc1 = pc1[:, :3]	
@@ -189,14 +202,48 @@ def main():
 
         pc2_03dpc.transform(T_static)
         # Punktwolken zusammenfügen im Koordinatensystem von Sensor A
-        merged_points = np.vstack((pc1, pc2))
+        merged_points = np.vstack((pc1, np.asarray(pc2_03dpc.points)))
         # visualize_single_frame(merged_points, vis_merged, pcd_merged, color=[0.7, 0.7, 0.7])  # gray
 
-
-
+        # add Frame to all_merged_points list
+        if config.FILE_EXPORT_ENABLE:
+            if save >= 2:
+                all_merged_points.append(merged_points)
+                save = 0
+            else:
+                save += 1
 
         # draw both clouds (different colors)
         visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
+
+
+    # ------------- Erstellung der Dateien aus merged point cloud 
+    
+    output_dir = "output_frames"
+    os.makedirs(output_dir, exist_ok=True)
+    if config.FILE_EXPORT_ENABLE:
+        if all_merged_points:  # nur wenn überhaupt etwas gesammelt wurde
+            num_frames = len(all_merged_points)
+            log_info(f"[main] Saving {num_frames} individual frame pointclouds...")
+
+            for i, merged_points in enumerate(all_merged_points):
+                merged_pcd = o3d.geometry.PointCloud()
+                merged_pcd.points = o3d.utility.Vector3dVector(merged_points.astype(np.float32))
+                filename = os.path.join(output_dir, f"frame_{i:04d}.ply")
+                o3d.io.write_point_cloud(filename, merged_pcd, write_ascii=False)
+
+            log_info("[main] All frame-wise pointclouds saved successfully.")
+            log_info(f"[main] Total frames written: {num_frames}")
+        else:
+            log_warn("[main] No pointclouds merged. Nothing to save.")
+
+
+    for p in multiprocessing.active_children():
+        print(f"[EXIT] Killing process {p.pid}")
+        p.terminate()
+        p.join()
+        print("[EXIT] force-killing script...")
+        os._exit(0)
 
 
 
