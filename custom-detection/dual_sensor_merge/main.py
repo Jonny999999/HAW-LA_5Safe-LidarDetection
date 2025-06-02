@@ -14,6 +14,8 @@ from utils import log_info, log_warn, log_debug
 from shared_types import StampCloudTuple
 from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
 import filters as filters
+import exporter
+
 
 import queue
 #from queue import Queue
@@ -133,11 +135,11 @@ def main():
                  [ 0,          0,          0,          1        ],
     ])
 
+    # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
+    # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
+    LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 6)
 
-    # -------------- Initialisiere Liste für das Ablegen der merged Pointcloud:
-    all_merged_points = []
 
-    save = 0
 
     # === Main loop ===
     # update visualizer windows
@@ -229,51 +231,12 @@ def main():
 
 
         # === Track finished frames ===
-        # TODO: remove this, instead call e.g. create_laz_file_from_pointcloud() when FILE_EXPORT_ENABLE is set
-        # add Frame to all_merged_points list
-        if config.FILE_EXPORT_ENABLE:
-            if save >= 6:
-                #all_merged_points.append(merged_points)
-                all_merged_points.append(cropped_points)
-                save = 0
-            else:
-                save += 1
 
+        # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
+        # This Line does not have to be changed for the event, that File Export will be deactivated
+        LazFileSave.save_frame(cropped_points)
 
-
-    # ------------- Erstellung der Dateien aus merged point cloud 
     
-    # TODO: outsource this, also run per frame instead of at the end
-    output_dir = "output/laz"
-    os.makedirs(output_dir, exist_ok=True)
-    if config.FILE_EXPORT_ENABLE:
-        if all_merged_points:  # nur wenn überhaupt etwas gesammelt wurde
-            num_frames = len(all_merged_points)
-            log_info(f"[main] Saving {num_frames} individual frame pointclouds...")
-
-            for i, merged_points in enumerate(all_merged_points):
-                points = merged_points.astype(np.float32)
-
-                header = laspy.LasHeader(point_format=3, version="1.4")
-                las = laspy.LasData(header)
-
-                # LAS expects scaled integers internally, so set scale to 0.001 for mm precision
-                header.scales = [0.001, 0.001, 0.001]
-                header.offsets = [0.0, 0.0, 0.0]
-
-                las.x = points[:, 0]
-                las.y = points[:, 1]
-                las.z = points[:, 2]
-
-                filename = os.path.join(output_dir, f"frame_{i:04d}.laz")
-                las.write(filename)  # auto compress to .laz if laszip is installed
-
-
-            log_info("Frames saved")
-
-        else:
-            log_warn("[main] No pointclouds merged. Nothing to save.")
-
 
     for p in multiprocessing.active_children():
         print(f"[EXIT] Killing process {p.pid}")

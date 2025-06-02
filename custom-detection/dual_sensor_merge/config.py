@@ -64,7 +64,7 @@ PCAP_FILE_FILTER_UDP_PORT = None
 ###############################
 
 # create laz files for each merged frame in output/
-FILE_EXPORT_ENABLE = False
+FILE_EXPORT_ENABLE = True
 
 # create output/status.json regularly updated with latest values e.g. detected people
 STATUS_FILE_ENABLED = False 
