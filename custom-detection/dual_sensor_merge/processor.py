@@ -2,7 +2,7 @@ import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
 
-from config import COUNT_PEOPLE_ENABLED, COUNT_PEOPLE_DRAW_BOXES, MODE_SECOND_DATA_SET, CROP_POINTCLOUD_POLYGON, CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER, POINTCLOUD_HISTORY_BUFFER_SIZE
+from config import COUNT_PEOPLE_ENABLED, COUNT_PEOPLE_DRAW_BOXES, MODE_SECOND_DATA_SET, CROP_POINTCLOUD_POLYGON, CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER, POINTCLOUD_HISTORY_BUFFER_SIZE, PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON
 from utils import log_info, log_warn, log_debug
 from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_boxes
 from filters import apply_highpass_filter, remove_isolated_points, crop_points_within_xy_polygon
@@ -56,7 +56,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer):
 
     elif MODE_SECOND_DATA_SET == "HIGHPASS+CROP+DENOISE":
         # Define rectangular crop region (clockwise or counter-clockwise)
-        highpass_points = apply_highpass_filter(pointcloud_history_buffer, minMovedMetersThreshold=0.1)
+        highpass_points = apply_highpass_filter(pointcloud_history_buffer, minMovedMetersThreshold=0.15)
         cropped_frame = crop_points_within_xy_polygon(highpass_points, polygon_xy=CROP_POINTCLOUD_POLYGON, visualizer=visualizer, draw_box=True)
         filtered_frame = remove_isolated_points(cropped_frame, nb_points=20, radius=0.3)
         #log_info("Visualizing high-pass + denoised frame.")
@@ -79,27 +79,17 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer):
         # Open viewer — pick with Shift + Left Click
         o3d.visualization.draw_geometries_with_editing([pc])
 
-    PEOPLE_ENTER_DOOR_POLYGON = [
-        #(-0.2, -11.4),  # left edge of door
-        #(2.9, -12.1),   # right edge of door
-        #(2.9, -11.0),   # right top corner
-        #(-0.2, -10.4)   # left top corner
-        (0.964201927, -10.393782616),
-        (3.526920319, -10.809790611),
-        (4.838806629, -9.851108551),
-        (2.367909431, -9.025931358)
-
-    ]
 
     # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
-        clusters = detect_moving_clusters(filtered_frame)
+        clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, min_z_height=0.6)
         draw_bounding_boxes(clusters, visualizer)
-        people_inside = track_room_occupancy(clusters, PEOPLE_ENTER_DOOR_POLYGON)
-        draw_2d_polygon(PEOPLE_ENTER_DOOR_POLYGON, visualizer)
+        people_inside = track_room_occupancy(clusters, polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON)
+        draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
 
-
+        ## old people estimation TODO: drop this
         #estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
+
 
     # Visualize both point clouds
     visualize_dual_frame(latest_frame, filtered_frame, visualizer)

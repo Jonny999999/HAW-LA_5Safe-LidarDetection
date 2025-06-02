@@ -87,6 +87,17 @@ CROP_POINTCLOUD_POLYGON = [
 # TODO: add variable to enable polygon cropping
 
 
+PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
+    # large polygon outsidepointcloud excluding door area (for detecing entered, exited)
+    (0.425109267, -10.492938042), # left outside door
+    (1.897194386, -9.769321442), # inner edge room
+    (3.835275173, -10.872682571), # right wall room
+    (7.989156246, -6.492611885), # top right room edge
+    (0.228421226, 0.920938611), # top room edge (sensor1)
+    (-6.129019260, -6.429360390) # left room edge
+]
+
+
 # for determining the crop polygon its a good idea to log the current pointcloud edges
 CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False
 
