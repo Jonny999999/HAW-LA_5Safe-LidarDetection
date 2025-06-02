@@ -43,10 +43,6 @@ def main():
     decoded_pointcloud_frames_queue_2 = Queue(maxsize=500)
 
 
-    ### # === Rolling buffer for motion filtering ===
-    ### # Used for highpass, temporal denoise, clustering
-    ### # This stores the *XYZ arrays* (after [:, :3])
-    ### pointcloud_history_buffer = deque(maxlen=POINTCLOUD_HISTORY_BUFFER_SIZE)
 
 
 
@@ -218,14 +214,18 @@ def main():
         cropped_points = filters.crop_points_within_xy_polygon(merged_points, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=vis_merged, draw_box=True, z_max_height_threshold=1)
 
 
-        # === Visualize transformed,merged,cropped points ===
-        # draw both clouds (different colors)
-        if False:
-            # visualize sensor merge (points sensor1 + transformed points sensor2 in red)
-            visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
+        MOTION_DETECTION_ENABLED = True
+        if MOTION_DETECTION_ENABLED:
+            process_and_visualize_latest_frame(cropped_points, vis_merged)
         else:
-            # visualize applied point filtering (all merged-points + points after crop in red)
-            visualize_dual_frame(merged_points, cropped_points, vis_merged)
+            # === Visualize transformed,merged,cropped points ===
+            # draw both clouds (different colors)
+            if False:
+                # visualize sensor merge (points sensor1 + transformed points sensor2 in red)
+                visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
+            else:
+                # visualize applied point filtering (all merged-points + points after crop in red)
+                visualize_dual_frame(merged_points, cropped_points, vis_merged)
 
 
         # === Track finished frames ===
@@ -296,24 +296,6 @@ def main():
     ###         visualizer.poll_events()
     ###         visualizer.update_renderer()
     ###         continue
-
-    ###     # Strip to XYZ only (drop intensity/ring/time if present)
-    ###     xyz_points = pointcloud[:, :3]
-
-    ###     # Add to rolling history buffer
-    ###     pointcloud_history_buffer.append(xyz_points)
-
-    ###     # Wait until enough frames for filters
-    ###     if len(pointcloud_history_buffer) >= POINTCLOUD_HISTORY_BUFFER_SIZE:
-    ###         # Process next frame for the gui update
-    ###         # Note: This / everything that uses the visualizer has to be in the main thread (where visualizer was initialized)
-    ###         # TODO: use open3d gui API (also has control elements etc) or custom lamda cmd queue to have separate thread for the gui
-    ###         process_and_visualize_latest_frame(pointcloud_history_buffer, visualizer)
-    ###     else:
-    ###         log_warn(f"too few frames in buffer for processing, waiting for buffer to fill up...({len(pointcloud_history_buffer)}/{POINTCLOUD_HISTORY_BUFFER_SIZE})")
-
-
-
 
 # call main() when file called directly
 if __name__ == "__main__":

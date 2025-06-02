@@ -60,12 +60,12 @@ PCAP_FILE_FILTER_UDP_PORT = None
 #####      Behaviour      #####
 ###############################
 
-FILE_EXPORT_ENABLE = True
+FILE_EXPORT_ENABLE = False
 
 ###############################
 ##### DETECTION ALGORITHM #####
 ###############################
-POINTCLOUD_HISTORY_BUFFER_SIZE = 10  # Rolling buffer of last N frames
+POINTCLOUD_HISTORY_BUFFER_SIZE = 7  # Rolling buffer of last N frames
 
 COUNT_PEOPLE_ENABLED = True
 COUNT_PEOPLE_DRAW_BOXES = True
