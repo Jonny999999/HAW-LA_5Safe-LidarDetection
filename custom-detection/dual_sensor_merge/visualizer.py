@@ -201,3 +201,50 @@ def pick_point_from_cloud(points, title="Pick Points"):
         return picked_indices, coords
     return picked_indices
 
+
+
+
+
+
+
+# ========== VISUALIZATION ==========
+drawn_bounding_boxes = []  # Persistent list of bounding box geometries
+def draw_bounding_boxes(clusters, visualizer, color=(0.0, 0.0, 0.5)):
+    """
+    Draws bounding boxes around clusters.
+
+    Args:
+        clusters: list of (centroid, o3d.geometry.PointCloud)
+        visualizer: Open3D visualizer
+        color: RGB tuple
+    """
+    global drawn_bounding_boxes
+
+    # Clear previous
+    for box in drawn_bounding_boxes:
+        visualizer.remove_geometry(box, reset_bounding_box=False)
+    drawn_bounding_boxes.clear()
+
+    # Draw new
+    for _, cluster in clusters:
+        bbox = cluster.get_axis_aligned_bounding_box()
+        bbox.color = color
+        visualizer.add_geometry(bbox, reset_bounding_box=False)
+        drawn_bounding_boxes.append(bbox)
+
+
+
+
+
+def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2)):
+    """
+    Draws a polygon as lines on the scene.
+    """
+    poly_3d = [(x, y, 0.0) for x, y in polygon_xy] + [(polygon_xy[0][0], polygon_xy[0][1], 0.0)]
+    lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
+
+    line_set = o3d.geometry.LineSet()
+    line_set.points = o3d.utility.Vector3dVector(poly_3d)
+    line_set.lines = o3d.utility.Vector2iVector(lines)
+    line_set.paint_uniform_color(color)
+    visualizer.add_geometry(line_set, reset_bounding_box=False)

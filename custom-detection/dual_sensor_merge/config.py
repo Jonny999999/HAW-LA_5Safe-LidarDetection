@@ -56,16 +56,33 @@ PCAP_FILE_PACKET_DELAY = 0
 PCAP_FILE_FILTER_UDP_PORT = None
 
 
+
+
+
 ###############################
 #####      Behaviour      #####
 ###############################
 
-FILE_EXPORT_ENABLE = True
+# create laz files for each merged frame in output/
+FILE_EXPORT_ENABLE = False
+
+# create output/status.json regularly updated with latest values e.g. detected people
+STATUS_FILE_ENABLED = False 
+
+# logging
+LOG_DEBUG_ENABLED   = False
+LOG_INFO_ENABLED    = False
+LOG_WARN_ENABLED    = True
+LOG_ERROR_ENABLED   = True
+
+
+
+
 
 ###############################
 ##### DETECTION ALGORITHM #####
 ###############################
-POINTCLOUD_HISTORY_BUFFER_SIZE = 10  # Rolling buffer of last N frames
+POINTCLOUD_HISTORY_BUFFER_SIZE = 7  # Rolling buffer of last N frames
 
 COUNT_PEOPLE_ENABLED = True
 COUNT_PEOPLE_DRAW_BOXES = True
@@ -85,6 +102,17 @@ CROP_POINTCLOUD_POLYGON = [
     (7.267323630, -6.364732371) # Sensor 2
 ]
 # TODO: add variable to enable polygon cropping
+
+
+PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
+    # large polygon outsidepointcloud excluding door area (for detecing entered, exited)
+    (0.425109267, -10.492938042), # left outside door
+    (1.897194386, -9.769321442), # inner edge room
+    (3.835275173, -10.872682571), # right wall room
+    (7.989156246, -6.492611885), # top right room edge
+    (0.228421226, 0.920938611), # top room edge (sensor1)
+    (-6.129019260, -6.429360390) # left room edge
+]
 
 
 # for determining the crop polygon its a good idea to log the current pointcloud edges
