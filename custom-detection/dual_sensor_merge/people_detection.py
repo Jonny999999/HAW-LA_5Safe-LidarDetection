@@ -3,6 +3,8 @@ import open3d as o3d
 from config import COUNT_PEOPLE_DRAW_BOXES
 from utils import * # custom logging helpers
 from collections import deque
+import status_file as status_file
+from shapely.geometry import Polygon, Point
 
 
 
@@ -93,10 +95,6 @@ _default_history_buffer = deque(maxlen=5)
 
 
 
-import numpy as np
-import open3d as o3d
-from shapely.geometry import Polygon, Point
-from collections import deque
 
 # Globals (optionally refactor to avoid)
 drawn_bounding_boxes = []
@@ -216,6 +214,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
 
         if not was_inside and is_inside and idx not in track_room_occupancy.entered_ids:
             log_warn("[track_room_occupancy] Person ENTERED room")
+            status_file.update_status_single_key("detection_last_event", "Person ENTERED")
             track_room_occupancy.entered_ids.add(idx)
             track_room_occupancy.exited_ids.discard(idx)
             people_inside += 1
@@ -223,6 +222,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
 
         elif was_inside and not is_inside and idx not in track_room_occupancy.exited_ids:
             log_warn("[track_room_occupancy] Person LEFT room")
+            status_file.update_status_single_key("detection_last_event", "Person LEFT")
             track_room_occupancy.exited_ids.add(idx)
             track_room_occupancy.entered_ids.discard(idx)
             people_inside -= 1
@@ -232,8 +232,14 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
             people_inside += 1  # Still inside
 
         if people_inside_incremented < 0:
-            log_error("[track_room_occupancy] decremented people_insude below 0 -> clipping to 0")
+            log_error("[track_room_occupancy] decremented `people_inside` below 0 -> clipping to 0")
             people_inside_incremented = 0
 
     log_warn(f"[track_room_occupancy] ABS-MOVING-PEOPLE-INSIDE: {max(people_inside, 0)}, INCREMENTED-LEFT-ENTERED-PEOPLE: {people_inside_incremented}")
+    status_file.update_status_bulk({
+        "ABS-MOVING-PEOPLE-INSIDE": max(people_inside, 0),
+        "INCREMENTED-LEFT-ENTERED-PEOPLE": people_inside_incremented 
+    })
+
+
     return max(people_inside, 0)

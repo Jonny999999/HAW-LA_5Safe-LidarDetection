@@ -56,11 +56,28 @@ PCAP_FILE_PACKET_DELAY = 0
 PCAP_FILE_FILTER_UDP_PORT = None
 
 
+
+
+
 ###############################
 #####      Behaviour      #####
 ###############################
 
+# create laz files for each merged frame in output/
 FILE_EXPORT_ENABLE = False
+
+# create output/status.json regularly updated with latest values e.g. detected people
+STATUS_FILE_ENABLED = False 
+
+# logging
+LOG_DEBUG_ENABLED   = False
+LOG_INFO_ENABLED    = False
+LOG_WARN_ENABLED    = True
+LOG_ERROR_ENABLED   = True
+
+
+
+
 
 ###############################
 ##### DETECTION ALGORITHM #####
