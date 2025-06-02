@@ -4,9 +4,9 @@ from scipy.spatial import cKDTree
 
 from config import COUNT_PEOPLE_ENABLED, COUNT_PEOPLE_DRAW_BOXES, MODE_SECOND_DATA_SET, CROP_POINTCLOUD_POLYGON, CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER, POINTCLOUD_HISTORY_BUFFER_SIZE
 from utils import log_info, log_warn, log_debug
-from visualizer import visualize_dual_frame
+from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_boxes
 from filters import apply_highpass_filter, remove_isolated_points, crop_points_within_xy_polygon
-from people_detection import estimate_moving_people
+from people_detection import estimate_moving_people, detect_moving_clusters, track_room_occupancy
 from collections import deque
 
 
@@ -79,9 +79,27 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer):
         # Open viewer — pick with Shift + Left Click
         o3d.visualization.draw_geometries_with_editing([pc])
 
+    PEOPLE_ENTER_DOOR_POLYGON = [
+        #(-0.2, -11.4),  # left edge of door
+        #(2.9, -12.1),   # right edge of door
+        #(2.9, -11.0),   # right top corner
+        #(-0.2, -10.4)   # left top corner
+        (0.964201927, -10.393782616),
+        (3.526920319, -10.809790611),
+        (4.838806629, -9.851108551),
+        (2.367909431, -9.025931358)
+
+    ]
+
     # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
-        estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
+        clusters = detect_moving_clusters(filtered_frame)
+        draw_bounding_boxes(clusters, visualizer)
+        people_inside = track_room_occupancy(clusters, PEOPLE_ENTER_DOOR_POLYGON)
+        draw_2d_polygon(PEOPLE_ENTER_DOOR_POLYGON, visualizer)
+
+
+        #estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
 
     # Visualize both point clouds
     visualize_dual_frame(latest_frame, filtered_frame, visualizer)

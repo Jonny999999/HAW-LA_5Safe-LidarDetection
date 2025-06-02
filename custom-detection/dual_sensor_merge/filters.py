@@ -3,6 +3,7 @@ import open3d as o3d
 from scipy.spatial import cKDTree
 from utils import log_warn, log_debug, log_info
 from matplotlib.path import Path
+from visualizer import draw_2d_polygon
 
 
 # ===============================
@@ -120,14 +121,7 @@ def crop_points_within_xy_polygon(points_or_pcd, polygon_xy, visualizer=None, dr
 
     # Optional polygon overlay
     if draw_box and visualizer is not None:
-        poly_3d = [(x, y, 0.0) for x, y in polygon_xy] + [(polygon_xy[0][0], polygon_xy[0][1], 0.0)]
-        lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
-
-        line_set = o3d.geometry.LineSet()
-        line_set.points = o3d.utility.Vector3dVector(poly_3d)
-        line_set.lines = o3d.utility.Vector2iVector(lines)
-        line_set.paint_uniform_color([0.2, 0.8, 0.2])  # green
-        visualizer.add_geometry(line_set, reset_bounding_box=False)
+        draw_2d_polygon(polygon_xy, visualizer)
 
     # Return in original format
     if return_type == "o3d":
