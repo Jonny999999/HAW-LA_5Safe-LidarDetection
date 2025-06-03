@@ -47,7 +47,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer):
         #log_info("Visualizing oldest frame (baseline).")
 
     elif MODE_SECOND_DATA_SET == "HIGHPASS":
-        filtered_frame = apply_highpass_filter(pointcloud_history_buffer, minMovedMetersThreshold=0.2)
+        filtered_frame = apply_highpass_filter(pointcloud_history_buffer, minMovedMetersThreshold=0.1)
         #log_info("Visualizing high-pass filtered frame.")
 
     elif MODE_SECOND_DATA_SET == "HIGHPASS+DENOISE":

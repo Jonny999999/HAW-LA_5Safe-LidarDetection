@@ -34,7 +34,7 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30,
         return 0
 
     if pointcloud_np.shape[0] == 0:
-        log_info("No dynamic points to analyze.")
+        log_warn("No dynamic points to analyze.")
         return 0
 
     # Convert to Open3D point cloud
@@ -46,7 +46,7 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30,
 
     # Handle empty/noise result
     if labels.size == 0 or np.max(labels) < 0:
-        log_info("No clusters found.")
+        log_warn("No clusters found.")
         return 0
 
     unique_labels, counts = np.unique(labels, return_counts=True)
@@ -151,7 +151,8 @@ def detect_moving_clusters(pointcloud_np, distance_threshold=0.5, min_points=30,
         centroid = np.mean(np.asarray(cluster.points), axis=0)
         result_clusters.append((centroid, cluster))
 
-    log_info(f"][detect clusters] detected clusters: {len(result_clusters)}")
+    log_debug(f"[detect clusters] detected clusters: {len(result_clusters)}")
+    status_file.update_status_single_key("DETECTION_MOVING_PEOPLE_INSIDE", f"{len(result_clusters)}")
     return result_clusters
 
 
@@ -214,7 +215,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
 
         if not was_inside and is_inside and idx not in track_room_occupancy.entered_ids:
             log_warn("[track_room_occupancy] Person ENTERED room")
-            status_file.update_status_single_key("detection_last_event", "Person ENTERED")
+            status_file.add_log_entry_to_status_file("DETECTION_LAST_EVENTS", "Person ENTERED", trigger_file_update=False)
             track_room_occupancy.entered_ids.add(idx)
             track_room_occupancy.exited_ids.discard(idx)
             people_inside += 1
@@ -222,7 +223,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
 
         elif was_inside and not is_inside and idx not in track_room_occupancy.exited_ids:
             log_warn("[track_room_occupancy] Person LEFT room")
-            status_file.update_status_single_key("detection_last_event", "Person LEFT")
+            status_file.add_log_entry_to_status_file("DETECTION_LAST_EVENTS", "Person LEFT", trigger_file_update=False)
             track_room_occupancy.exited_ids.add(idx)
             track_room_occupancy.entered_ids.discard(idx)
             people_inside -= 1
@@ -235,11 +236,8 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
             log_error("[track_room_occupancy] decremented `people_inside` below 0 -> clipping to 0")
             people_inside_incremented = 0
 
-    log_warn(f"[track_room_occupancy] ABS-MOVING-PEOPLE-INSIDE: {max(people_inside, 0)}, INCREMENTED-LEFT-ENTERED-PEOPLE: {people_inside_incremented}")
-    status_file.update_status_bulk({
-        "ABS-MOVING-PEOPLE-INSIDE": max(people_inside, 0),
-        "INCREMENTED-LEFT-ENTERED-PEOPLE": people_inside_incremented 
-    })
+    log_debug(f"[track_room_occupancy] ABS-MOVING-PEOPLE-INSIDE: {max(people_inside, 0)}, INCREMENTED-LEFT-ENTERED-PEOPLE: {people_inside_incremented}")
+    status_file.update_status_single_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{people_inside_incremented}")
 
 
     return max(people_inside, 0)

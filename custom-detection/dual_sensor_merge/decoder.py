@@ -7,6 +7,7 @@ from utils import log_info, log_warn, log_debug, log_error
 from queue import Full
 
 from shared_types import StampCloudTuple
+from status_file import update_status_single_key
 
 from multiprocessing import Queue  # For the Queue class
 from queue import Full, Empty      # For the exceptions
@@ -22,6 +23,7 @@ def decode_loop(frame_queue, udp_packet_queue, sensor_id):
     log_warn(f"Starting decoder loop for sensr {sensor_id}")
     udp_packet_count = 0
     current_stamp = None  # Track last packets timestamp in the frame
+    stats_last_frame_decoded_time = time.time()
 
     while True:
         # get timestamp packet received + packet from receiver queue
@@ -39,6 +41,14 @@ def decode_loop(frame_queue, udp_packet_queue, sensor_id):
 
         # has pointcloud data when full scan accumulated over several packets
         if result:
+            stats_framerate = 1/(time.time() - stats_last_frame_decoded_time)
+            update_status_single_key(
+                f"TIMING_FRAMERATE_DECODER_{sensor_id}",
+                f"{stats_framerate:.1f} fps",
+                trigger_file_update=False
+            )
+            stats_last_frame_decoded_time = time.time()
+            
             log_debug(f"[decoder {sensor_id}] Frame decoded completely ({udp_packet_count} packets)")
             udp_packet_count = 0
             # Add pointcloud to queue
@@ -90,6 +100,7 @@ def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=0.05, max_buffe
     buffer_2 = deque()
     failed_match_counter = 0
     max_failed_match_warn = 5 # max failed sync attempts in a row for warning to be printed (tolerance too tight)
+    stats_last_frame_synced = time.time()
 
     def get_from_queue(q, buffer):
         """Blocking get with timeout, returns True if new item added"""
@@ -131,9 +142,27 @@ def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=0.05, max_buffe
             buffer_1 = deque(list(buffer_1)[i+1:])
             buffer_2 = deque(list(buffer_2)[j+1:])
             synced_stamp = (t1 + t2) / 2
-            synced_queue.put((synced_stamp, pc1, pc2))
-            log_info(f"[sync] Synced frames (Δt={best_dt:.3f}s) at {synced_stamp}")
+            log_debug(f"[sync] Synced frames (Δt={best_dt:.3f}s) at {synced_stamp}")
             failed_match_counter = 0  # reset on success
+            # Insert the successfully synced frames into queue
+            stats_synced_frame_interval = int((time.time() - stats_last_frame_synced) * 1000)
+            update_status_single_key(
+                "TIMING_SYNCED_FRAMERATE",
+                f"{1000/stats_synced_frame_interval:.1f} fps ({stats_synced_frame_interval} ms)",
+                trigger_file_update=False
+            )
+            try:
+                synced_queue.put((synced_stamp, pc1, pc2), timeout=0.01)
+            except Full:
+                try:
+                    log_warn("[sync] Synced queue full, processing cant keept up? → dropping oldest synced frame.")
+                    # Remove one old item to make space
+                    _ = synced_queue.get_nowait()
+                    # Try again to insert
+                    synced_queue.put((synced_stamp, pc1, pc2), timeout=0.01)
+                except:
+                    log_error("[sync] Synced queue full and could not recover by dropping. -> losing newly synced frame")
+            stats_last_frame_synced = time.time()
         else:
             failed_match_counter += 1
             if failed_match_counter >= max_failed_match_warn:

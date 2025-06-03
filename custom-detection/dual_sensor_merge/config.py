@@ -64,14 +64,14 @@ PCAP_FILE_FILTER_UDP_PORT = None
 ###############################
 
 # create laz files for each merged frame in output/
-FILE_EXPORT_ENABLE = True
+FILE_EXPORT_ENABLE = False
 
 # create output/status.json regularly updated with latest values e.g. detected people
-STATUS_FILE_ENABLED = False 
+STATUS_FILE_ENABLED = True 
 
 # logging
 LOG_DEBUG_ENABLED   = False
-LOG_INFO_ENABLED    = False
+LOG_INFO_ENABLED    = True
 LOG_WARN_ENABLED    = True
 LOG_ERROR_ENABLED   = True
 
@@ -82,7 +82,7 @@ LOG_ERROR_ENABLED   = True
 ###############################
 ##### DETECTION ALGORITHM #####
 ###############################
-POINTCLOUD_HISTORY_BUFFER_SIZE = 7  # Rolling buffer of last N frames
+POINTCLOUD_HISTORY_BUFFER_SIZE = 9  # Rolling buffer of last N frames
 
 COUNT_PEOPLE_ENABLED = True
 COUNT_PEOPLE_DRAW_BOXES = True

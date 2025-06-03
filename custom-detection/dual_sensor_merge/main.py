@@ -15,6 +15,7 @@ from shared_types import StampCloudTuple
 from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
 import filters as filters
 import exporter
+from status_file import update_status_single_key
 
 
 import queue
@@ -23,6 +24,7 @@ import queue
 
 from multiprocessing import Process, Queue
 import multiprocessing
+
 
 
 
@@ -140,6 +142,8 @@ def main():
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 6)
 
 
+    # variable for logging processing duration
+    stats_processing_start_time = time.time()
 
     # === Main loop ===
     # update visualizer windows
@@ -172,12 +176,18 @@ def main():
         # stamp, pc1, pc2 = synced_frame_queue.get()
 
 
+        # Log processing duration to file
+        stats_processing_duration_ms = int((time.time() - stats_processing_start_time) * 1000)
+        update_status_single_key("TIMING_PROCESSING_DURATION_MS", f"{stats_processing_duration_ms} ms")
+
         # --------------- TESTING Ende der Datei erkennen. durch warten von einigen Sekunden und dann Abbruch
         try:
             stamp, pc1, pc2 = synced_frame_queue.get(timeout=5.0)  # 5 Sekunden warten
         except queue.Empty:
             log_info("[main] No more frames in synced_frame_queue. Exiting loop.")
             break
+
+        stats_processing_start_time = time.time()
 
         # splice down pc1 and pc2 to XYZ Coordinates
         pc1 = pc1[:, :3]	
@@ -190,9 +200,9 @@ def main():
 
         # === Update single sensor visualization ===
         # update visualizer windows with new pointclouds
-        log_info(f"[main] Updating views with synced frame from {stamp:.3f}s")
-        visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
-        visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
+        log_debug(f"[main] Updating views with synced frame from {stamp:.3f}s")
+        #visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
+        #visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
 
         # Merge
         # TODO add transformation here
@@ -231,12 +241,10 @@ def main():
 
 
         # === Track finished frames ===
-
         # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
         # This Line does not have to be changed for the event, that File Export will be deactivated
         LazFileSave.save_frame(cropped_points)
 
-    
 
     for p in multiprocessing.active_children():
         print(f"[EXIT] Killing process {p.pid}")
