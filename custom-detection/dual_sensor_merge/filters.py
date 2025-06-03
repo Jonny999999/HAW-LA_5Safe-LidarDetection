@@ -2,6 +2,8 @@ import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
 from utils import log_warn, log_debug, log_info
+from matplotlib.path import Path
+from visualizer import draw_2d_polygon
 
 
 # ===============================
@@ -76,49 +78,55 @@ def remove_isolated_points(points, nb_points=3, radius=0.2):
 
 from shapely.geometry import Polygon, Point
 
-def crop_points_within_xy_polygon(points, polygon_xy, visualizer=None, draw_box=False):
+
+def crop_points_within_xy_polygon(points_or_pcd, polygon_xy, visualizer=None, draw_box=False, z_max_height_threshold=0.0):
     """
-    Filters out all 3D points whose (x, y) coordinates lie outside the given 2D polygon.
+    Fast filter: Keeps 3D points whose (x, y) are inside polygon.
+    Optionally also drops points with z > z_max_height_threshold.
 
     Args:
-        points (np.ndarray): Input N x 3 point cloud
-        polygon_xy (list): List of 4 (x, y) tuples defining the polygon
-        visualizer (Visualizer, optional): Open3D visualizer to draw crop box
-        draw_box (bool): Whether to visualize the crop polygon in Open3D
+        points_or_pcd (np.ndarray or o3d.geometry.PointCloud): Input point cloud
+        polygon_xy (list): List of (x, y) tuples for polygon
+        visualizer (Visualizer, optional): Open3D visualizer for drawing polygon
+        draw_box (bool): Draw polygon in Open3D if visualizer is set
+        z_max_height_threshold (float): Optional Z-limit for points (disabled if <= 0)
 
     Returns:
-        np.ndarray: Cropped point cloud (still N x 3)
+        np.ndarray or o3d.geometry.PointCloud: Filtered point cloud
     """
-
-        
     if len(polygon_xy) < 3:
         raise ValueError("At least 3 XY coordinates required to define a polygon")
 
-    poly = Polygon(polygon_xy)
-    mask = []
+    # Detect input type
+    if isinstance(points_or_pcd, o3d.geometry.PointCloud):
+        points_np = np.asarray(points_or_pcd.points)
+        return_type = "o3d"
+    else:
+        points_np = np.asarray(points_or_pcd)
+        return_type = "np"
 
-    # Test each point's (x, y) location against polygon
-    for pt in points:
-        x, y = pt[0], pt[1]
-        mask.append(poly.contains(Point(x, y)))
+    # Create fast 2D polygon mask
+    poly_path = Path(polygon_xy)
+    mask_xy = poly_path.contains_points(points_np[:, :2])
 
-    filtered = points[np.array(mask)]
+    # Apply optional Z filter
+    if z_max_height_threshold > 0:
+        mask_z = points_np[:, 2] <= z_max_height_threshold
+        mask = np.logical_and(mask_xy, mask_z)
+    else:
+        mask = mask_xy
 
-    log_debug(f"CROP: Kept {filtered.shape[0]} of {points.shape[0]} points within polygon.")
+    filtered_np = points_np[mask]
+    log_debug(f"CROP: Kept {filtered_np.shape[0]} of {points_np.shape[0]} points (XY polygon + Z threshold).")
 
-    # Optional: draw the polygon as a flat Open3D line loop
+    # Optional polygon overlay
     if draw_box and visualizer is not None:
-        import open3d as o3d
-        # Convert 2D polygon to 3D line set
-        poly_3d = [(x, y, 0.0) for x, y in polygon_xy]
-        poly_3d.append(poly_3d[0])  # close loop
+        draw_2d_polygon(polygon_xy, visualizer)
 
-        lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
-        line_set = o3d.geometry.LineSet()
-        line_set.points = o3d.utility.Vector3dVector(poly_3d)
-        line_set.lines = o3d.utility.Vector2iVector(lines)
-        line_set.paint_uniform_color([0.2, 0.8, 0.2])  # green crop region
-
-        visualizer.add_geometry(line_set, reset_bounding_box=False)
-
-    return filtered
+    # Return in original format
+    if return_type == "o3d":
+        pcd_filtered = o3d.geometry.PointCloud()
+        pcd_filtered.points = o3d.utility.Vector3dVector(filtered_np)
+        return pcd_filtered
+    else:
+        return filtered_np
