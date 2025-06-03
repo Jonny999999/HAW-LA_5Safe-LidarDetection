@@ -1,3 +1,4 @@
+# Imported libraries
 from collections import deque
 import time
 import numpy as np
@@ -5,12 +6,16 @@ import open3d as o3d
 import os
 import laspy
 import sys
+import queue
+import multiprocessing
+from multiprocessing import Process, Queue
 
+# Imports from custom files
 import config as config # import entire config (use with prefix)
 from receiver import start_receiver_thread
 from decoder import decode_loop, frame_synchronizer
 from processor import process_and_visualize_latest_frame
-from visualizer import initialize_visualizer, visualize_single_frame, visualize_dual_frame, pick_point_from_cloud
+from visualizer import pick_point_from_cloud, update_visualizer_by_mode, initialize_all_used_visualizer_windows, get_visualizer_by_mode, handle_inputs_of_active_visualizers
 from utils import log_info, log_warn, log_debug
 from shared_types import StampCloudTuple
 from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
@@ -19,12 +24,6 @@ import exporter
 from status_file import update_status_single_key
 
 
-import queue
-#from queue import Queue
-#import threading
-
-from multiprocessing import Process, Queue
-import multiprocessing
 
 
 
@@ -45,6 +44,10 @@ import multiprocessing
 
 def main():
 
+    ############################
+    ####### Declarations #######
+    ############################
+
     # === Queue 1: Transfer of raw UDP/PCAP packets ===
     # Filled by: receiver.py → start_receiver() thread
     # Read by:  decoder.py → decode_loop()
@@ -62,9 +65,34 @@ def main():
     decoded_pointcloud_frames_queue_2 = Queue(maxsize=500)
 
 
+    # === Queue 3: synchronized pointclouds of both sensors ===
+    synced_frame_queue = Queue(maxsize=2)
+
+
+    # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
+    # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
+    LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
+
+
+    # variable for logging processing duration
+    stats_processing_start_time = time.time()
+
+
+    # === Initialize Open3D windows ===
+    ### #visualizer = initialize_visualizer()
+    # create 3 visualizer windows
+    initialize_all_used_visualizer_windows()
+
+    # variables for drawing the pointclouds
+    pointcloud_1_o3d = o3d.geometry.PointCloud()
+    pointcloud_2_o3d = o3d.geometry.PointCloud()
+    pointcloud_merged_o3d = o3d.geometry.PointCloud()
 
 
 
+    #######################################
+    ###### Start threads / processes ######
+    #######################################
 
     # === Start packet receiver processes ===
     # This will feed udp_packet_queue (live UDP or PCAP mode)
@@ -90,7 +118,6 @@ def main():
         )
 
 
-
     # === Start decoding processes ===
     # Pulls packets from udp_packet_queue, assembles full scans, pushes to decoded_pointcloud_frames_queue
     # using multiprocessing instead of threading to run on actual cpu cores
@@ -98,18 +125,13 @@ def main():
     Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_2, udp_packet_queue_2, 2)).start()
 
 
-
     # === Start process for synchronising the decoded frames ===
-    # queue for synchronized pointclouds (frames)
     # TODO: Reduce latency, temporary reduced queue size from 10 to 2
-    synced_frame_queue = Queue(maxsize=2)
-
     Process(target=frame_synchronizer, args=(
-        decoded_pointcloud_frames_queue_1,
+        decoded_pointcloud_frames_queue_1, # reads from decoded pointclouds queues
         decoded_pointcloud_frames_queue_2,
-        synced_frame_queue,
+        synced_frame_queue, # writes synced frame pair in synced_frame queue
     )).start()
-
 
 
     # === Start Thread for terminal input ===
@@ -119,173 +141,109 @@ def main():
 
 
 
-    # === Initialize Open3D windows ===
-    ### #visualizer = initialize_visualizer()
-    # create 3 visualizer windows
-    vis1 = initialize_visualizer("Sensor 1")
-    vis2 = initialize_visualizer("Sensor 2")
-    vis_merged = initialize_visualizer("Merged View")
-
-    # variables for drawing the pointclouds
-    pcd1 = o3d.geometry.PointCloud()
-    pcd2 = o3d.geometry.PointCloud()
-    pcd_merged = o3d.geometry.PointCloud()
 
 
 
-    # Transformation (Translation and Rotation) Matrix. calculated in calculate_transformation_maxtrix.py based on 3 Points
 
-    # 2025.05.26: works for `2025-05-20_dual-sensor-test_sensor-xxx.pcap.gz`
-    # Determined 3 reference points using recorded data
-    # TODO: outsource transformation matrix to CONFIG, or even separate .json file for automatic transfer
-    T_static = np.array([
-                    [ 0.62288801, -0.78223369,  0.01099957, -9.16811678],
-                    [ 0.77832635,  0.6210714,   0.09207824, -1.12348435],
-                    [-0.07885822, -0.04879318,  0.99569102, -0.61174572],
-                    [ 0.0,         0.0,         0.0,         1.0]
-    ])
-
-
-    # 2025.05.28: works for `data/testdata/2025-05-28_dual-sensor-test_sensor-xxx.pcap.gz`
-    # Determined 3 reference points during live sensor setup
-    # TODO: outsource transformation matrix to CONFIG, or even separate .json file for automatic transfer
-    T_static = np.array([
-                 [ 0.66810762, 0.7309481, -0.13909377, 6.27345587],
-                 [-0.74305003, 0.66519418,-0.07343942,-6.48224065],
-                 [ 0.03884396, 0.15241907, 0.98755232, 1.1114492 ],
-                 [ 0,          0,          0,          1        ],
-    ])
-
-    # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
-    # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
-    LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
-
-
-    # variable for logging processing duration
-    stats_processing_start_time = time.time()
-
-    # === Main loop ===
+    #######################
+    ###### Main Loop ######
+    #######################
+    # receive synced frames
     # update visualizer windows
+    # run motion detection
     # handle play/pause/launch-point-picker
     while True:
-        # Check if a pick was requested by terminal input
-        pick_req = get_pick_request() # by entering e.g. "pick1" in console and pressing enter
-        if pick_req:
-            log_info(f"[main] Executing pick request for {pick_req}")
-            if pick_req == "sensor1":
-                idxs = pick_point_from_cloud(pc1, "Sensor 1")
-                log_warn(f"[main] Picked indices of Sensor1: {idxs}, Resuming main loop")
-            elif pick_req == "sensor2":
-                idxs = pick_point_from_cloud(pc2, "Sensor 2")
-                log_warn(f"[main] Picked indices of Sensor2: {idxs}, Resuming main loop")
-            clear_pick_request()
-            continue  # wait until resumed
-
-        # check if paused
-        if not should_advance_frame():
-            # when paused, no data update, only run handlers (camera control responsive)
-            vis1.poll_events(); vis1.update_renderer()
-            vis2.poll_events(); vis2.update_renderer()
-            vis_merged.poll_events(); vis_merged.update_renderer()
-            time.sleep(0.05)
-            continue # wait until resumed
-
-
-        # pull next synced pointclouds from queue
-        # stamp, pc1, pc2 = synced_frame_queue.get()
-
-
-        # Log processing duration to file
-        stats_processing_duration_ms = int((time.time() - stats_processing_start_time) * 1000)
-        update_status_single_key("TIMING_PROCESSING_DURATION_MS", f"{stats_processing_duration_ms} ms")
-
-        # --------------- TESTING Ende der Datei erkennen. durch warten von einigen Sekunden und dann Abbruch
-        try:
-            stamp, pc1, pc2 = synced_frame_queue.get(timeout=5.0)  # 5 Sekunden warten
-        except queue.Empty:
-            log_info("[main] No more frames in synced_frame_queue. Exiting loop.")
-            break
-
+        
+        #=== get synced pointcloud from queue ===
+        stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() # TODO: add timeout here to stay responsive when no data received?
         stats_processing_start_time = time.time()
 
         # splice down pc1 and pc2 to XYZ Coordinates
-        pc1 = pc1[:, :3]	
-        pc2 = pc2[:, :3]	
+        pointcloud_1_array = pointcloud_1_array[:, :3]	
+        pointcloud_2_array = pointcloud_2_array[:, :3]	
 
-        # Create Pointcloud from 3 dimensional array
-        pc2_03dpc  = o3d.geometry.PointCloud()
-        pc2_03dpc.points = o3d.utility.Vector3dVector(pc2.astype(np.float64))
-
-
-        # === Update single sensor visualization ===
-        # update visualizer windows with new pointclouds
-        log_debug(f"[main] Updating views with synced frame from {stamp:.3f}s")
-        visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
-        visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
-
-        # Merge
-        # TODO add transformation here
-        #merged_points = np.vstack((pc1, pc2))
-        #visualize_single_frame(merged_points, vis_merged, pcd_merged, color=[0.7, 0.7, 0.7])  # gray
-        
 
         # === Apply transformation ===
-        pc2_03dpc.transform(T_static)
-        # Punktwolken zusammenfügen im Koordinatensystem von Sensor A
+        # create Pointcloud from 3 dimensional array
+        pointcloud_2_transformed_o3d = o3d.geometry.PointCloud()
+        pointcloud_2_transformed_o3d.points = o3d.utility.Vector3dVector(pointcloud_2_array.astype(np.float64))
+        # transform with matrix
+        pointcloud_2_transformed_o3d.transform(config.TRANSFORMATION_MATRIX_SENSOR_2)
 
 
         # === Merge pointclouds ===
-        merged_points = np.vstack((pc1, np.asarray(pc2_03dpc.points)))
+        pointcloud_merged_array = np.vstack((pointcloud_1_array, np.asarray(pointcloud_2_transformed_o3d.points)))
         # visualize_single_frame(merged_points, vis_merged, pcd_merged, color=[0.7, 0.7, 0.7])  # gray
 
 
         # === Filter relevant points ===
         # filter out points outside of the configured polygon (config.py)
         # also drop points that are above certain z coordinate (1m)
-        cropped_points = filters.crop_points_within_xy_polygon(merged_points, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=vis_merged, draw_box=True, z_max_height_threshold=1)
+        pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
 
-        MOTION_DETECTION_ENABLED = True
-        if MOTION_DETECTION_ENABLED:
-            process_and_visualize_latest_frame(cropped_points, vis_merged)
-        else:
-            # === Visualize transformed,merged,cropped points ===
-            # draw both clouds (different colors)
-            if True:
-                # visualize sensor merge (points sensor1 + transformed points sensor2 in red)
-                visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
-            else:
-                # visualize applied point filtering (all merged-points + points after crop in red)
-                visualize_dual_frame(merged_points, cropped_points, vis_merged)
+        # === Update visualizer windows ===
+        # Define context with all needed arrays for visualization functions
+        context = {
+            "pointcloud_1_array": pointcloud_1_array,
+            "pointcloud_2_array": pointcloud_2_array,
+            "pointcloud_1_o3d": pointcloud_1_o3d,
+            "pointcloud_2_o3d": pointcloud_2_o3d,
+            "pc2_transformed": np.asarray(pointcloud_2_transformed_o3d.points),
+            "pc_merged": pointcloud_merged_array,
+            "pc_filtered": pointcloud_merged_filtered_array,
+        }
+        # update each visualizer depending on its mode
+        update_visualizer_by_mode(config.VISUALIZER_WINDOW_1_MODE, context)
+        update_visualizer_by_mode(config.VISUALIZER_WINDOW_2_MODE, context)
+        update_visualizer_by_mode(config.VISUALIZER_WINDOW_3_MODE, context)
 
 
-        # === Track finished frames ===
+        # === run Motion Detection ===
+        if config.MOTION_DETECTION_ENABLED:
+            # determine which visualizer window is configured to display the motion detection output
+            # run motion detection
+            process_and_visualize_latest_frame(context["pc_filtered"], get_visualizer_by_mode("motion_detection"))
+
+
+        # === File export of merged frames ===
         # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
         # This Line does not have to be changed for the event, that File Export will be deactivated
-        LazFileSave.save_frame(cropped_points)
+        LazFileSave.save_frame(pointcloud_merged_filtered_array)
 
 
-    for p in multiprocessing.active_children():
-        print(f"[EXIT] Killing process {p.pid}")
-        p.terminate()
-        p.join()
-        print("[EXIT] force-killing script...")
-        os._exit(0)
+        # === handle launch point picker functionality ===
+        # Check if a pick was requested by terminal input
+        # TODO: the CLI approach does not integrate well anymore, rework?
+        pick_req = get_pick_request() # by entering e.g. "pick1" in console and pressing enter
+        if pick_req:
+            log_info(f"[main] Executing pick request for {pick_req}")
+            if pick_req == "sensor1":
+                idxs = pick_point_from_cloud(pointcloud_1_array, "Sensor 1")
+                log_warn(f"[main] Picked indices of Sensor1: {idxs}, Resuming main loop")
+            elif pick_req == "sensor2":
+                idxs = pick_point_from_cloud(pointcloud_2_array, "Sensor 2")
+                log_warn(f"[main] Picked indices of Sensor2: {idxs}, Resuming main loop")
+            clear_pick_request()
+            continue  # wait until resumed
+        # check if paused
+        if not should_advance_frame():
+            # when paused, no data update, only run handlers (camera control responsive)
+            handle_inputs_of_active_visualizers()
+            time.sleep(0.05)
+            continue # wait until resumede_frame(pointcloud_merged_filtered_array)
+
+
+        # === update statistics ===
+        # done processing - Log processing duration to file
+        stats_processing_duration_ms = int((time.time() - stats_processing_start_time) * 1000)
+        update_status_single_key("TIMING_PROCESSING_DURATION_MS", f"{stats_processing_duration_ms} ms")
 
 
 
-    # old code for detecting motion
-    ### # === Main loop: process and visualize each complete scan ===
-    ### while True:
-    ###     try:
-    ###         # Block until a full scan is available, with timeout to keep visualizer responsive
-    ###         stamp, pointcloud = decoded_pointcloud_frames_queue_1.get(timeout=0.1)
-    ###     except queue.Empty:
-    ###         #log_debug("waiting for full frame timed out, updating visualizer (responsive)")
-    ###         # Timeout expired, no new frame — keep the visualizer responsive (camera control)
-    ###         visualizer.poll_events()
-    ###         visualizer.update_renderer()
-    ###         continue
+
+
+
 
 # call main() when file called directly
 if __name__ == "__main__":

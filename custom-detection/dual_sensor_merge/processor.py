@@ -83,16 +83,18 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer):
     # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
         clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, min_z_height=0.6)
-        draw_bounding_boxes(clusters, visualizer)
+        if visualizer is not None:
+            draw_bounding_boxes(clusters, visualizer)
+            draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
         people_inside = track_room_occupancy(clusters, polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON)
-        draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
 
         ## old people estimation TODO: drop this
         #estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
 
 
     # Visualize both point clouds
-    visualize_dual_frame(latest_frame, filtered_frame, visualizer)
+    if visualizer is not None:
+        visualize_dual_frame(latest_frame, filtered_frame, visualizer)
 
 
 

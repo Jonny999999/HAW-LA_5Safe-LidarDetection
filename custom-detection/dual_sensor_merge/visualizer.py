@@ -1,9 +1,14 @@
 import numpy as np
 import open3d as o3d
-from utils import log_info, log_warn, log_debug
 import numpy as np
 from scipy.spatial import cKDTree
 
+from utils import log_info, log_warn, log_debug
+import config
+
+
+visualizer_instances = {}
+visualizer_modes = {}
 
 
 def initialize_visualizer(title="LiDAR Viewer", width=1280, height=720):
@@ -13,7 +18,80 @@ def initialize_visualizer(title="LiDAR Viewer", width=1280, height=720):
     return visualizer
 
 
+def create_window_if_needed(mode, window_title_prefix):
+    if mode == "none":
+        return None
+    title = f"{window_title_prefix} ({mode})"
+    return initialize_visualizer(title)
 
+
+def initialize_all_used_visualizer_windows():
+    global visualizer_instances, visualizer_modes
+
+    visualizer_modes = {
+        "Window 1": config.VISUALIZER_WINDOW_1_MODE,
+        "Window 2": config.VISUALIZER_WINDOW_2_MODE,
+        "Window 3": config.VISUALIZER_WINDOW_3_MODE,
+    }
+
+    for win_name, mode in visualizer_modes.items():
+        vis = create_window_if_needed(mode, win_name)
+        visualizer_instances[win_name] = vis
+
+
+
+def get_visualizer_by_mode(mode):
+    # TODO: check initialize_all_windows was run?
+    for name, configured_mode in visualizer_modes.items():
+        if configured_mode == mode:
+            return visualizer_instances.get(name)
+    #log_error(f"[get_visualizer_by_mode] active visualizer with mode {mode} found, returning null")
+    return None  # Fallback if not found
+
+
+def handle_inputs_of_active_visualizers():
+    """
+    Updates all currently initialized Open3D visualizer windows.
+    Should be called regularly to keep UI responsive (e.g. during pause).
+    """
+    for vis in visualizer_instances.values():  # <-- fix: use .values()
+        if vis is not None:
+            vis.poll_events()
+            vis.update_renderer()
+
+
+
+def update_visualizer_by_mode(mode, context):
+    """
+    Renders data into the visualizer assigned to the given mode.
+
+    Args:
+        mode (str): Visualization mode (e.g., 'sensor1', 'merged_dual', etc.)
+        context (dict): Point cloud data arrays + Open3D PointClouds
+    """
+    vis = get_visualizer_by_mode(mode)
+    if mode == "none" or vis is None:
+        print("[update_visuzlier_by_mode] no vis assigned to this mode")
+        return
+
+    if mode == "sensor1":
+        visualize_single_frame(context["pointcloud_1_array"], vis, context["pointcloud_1_o3d"], color=[0.0, 0.5, 1.0])
+
+    elif mode == "sensor2":
+        visualize_single_frame(context["pointcloud_2_array"], vis, context["pointcloud_2_o3d"], color=[1.0, 0.5, 0.0])
+
+    elif mode == "merged_dual":
+        visualize_dual_frame(context["pointcloud_1_array"], context["pc2_transformed"], vis)
+
+    elif mode == "merged_filtered":
+        visualize_dual_frame(context["pc_merged"], context["pc_filtered"], vis)
+
+    elif mode == "motion_detection":
+        # Do not render here — handled externally
+        return
+
+    else:
+        log_warn(f"[visualizer] Unknown visualization mode: {mode}")
 
 
 
@@ -100,10 +178,8 @@ def remove_near_duplicates(raw, filtered, threshold=0.001):
 
 
 
-geometry_added = False
-pcd_raw = o3d.geometry.PointCloud()
-pcd_filtered = o3d.geometry.PointCloud()
-# update window with two pointclouds in default and red color
+# Map visualizer ID -> pointcloud objects and state (replace global variables for use with multiple visualizer windows)
+_visualizer_objects = {}
 def visualize_dual_frame(raw_points, filtered_points, visualizer):
     """
     Visualizes two point clouds in Open3D:
@@ -116,21 +192,15 @@ def visualize_dual_frame(raw_points, filtered_points, visualizer):
         filtered_points (np.ndarray): Processed cloud (Nx3)
         visualizer (Visualizer): Open3D window
     """
-
-    global pcd_filtered, pcd_raw
-
     if raw_points.size == 0 and filtered_points.size == 0:
-        log_warn(" Both frames empty, skipping visualization.")
+        log_warn("Both frames empty, skipping visualization.")
         return
 
     # Automatically slice down to 3D if needed
-    if filtered_points.ndim == 2 and filtered_points.shape[1] > 3:
-        #log_debug(f"[visualizer] Trimming point data from shape {points.shape} to (N, 3) for visualization.")
-        filtered_points = filtered_points[:, :3]
-    # Automatically slice down to 3D if needed
     if raw_points.ndim == 2 and raw_points.shape[1] > 3:
-        #log_debug(f"[visualizer] Trimming point data from shape {points.shape} to (N, 3) for visualization.")
         raw_points = raw_points[:, :3]
+    if filtered_points.ndim == 2 and filtered_points.shape[1] > 3:
+        filtered_points = filtered_points[:, :3]
 
     # if both pointclouds are provided, remove equal points from raw_points cloud so filtered_points are always visible (draw order seems random, sometimes red points not visible at all)
     if raw_points.size > 0 and filtered_points.size > 0:
@@ -138,26 +208,36 @@ def visualize_dual_frame(raw_points, filtered_points, visualizer):
         #raw_points = remove_exact_duplicates(raw_points, filtered_points) # this is very inefficient (cpu >100%)
         raw_points = remove_near_duplicates(raw_points, filtered_points)
 
+    vis_id = id(visualizer)
+    if vis_id not in _visualizer_objects:
+        _visualizer_objects[vis_id] = {
+            "pcd_raw": o3d.geometry.PointCloud(),
+            "pcd_filtered": o3d.geometry.PointCloud(),
+            "geometry_added": False
+        }
+
+    state = _visualizer_objects[vis_id]
+    pcd_raw = state["pcd_raw"]
+    pcd_filtered = state["pcd_filtered"]
+
     if raw_points.size > 0:
         pcd_raw.points = o3d.utility.Vector3dVector(raw_points.astype(np.float64))
-        # Optional: reset color if you want raw to be a default gray
-        pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])   # gray color
+        pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])
         visualizer.update_geometry(pcd_raw)
 
     if filtered_points.size > 0:
         pcd_filtered.points = o3d.utility.Vector3dVector(filtered_points.astype(np.float64))
-        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])  # solid red after updating points!
+        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
         visualizer.update_geometry(pcd_filtered)
 
-    # add geometry initially
-    global geometry_added
-    if not geometry_added:
+    if not state["geometry_added"]:
         visualizer.add_geometry(pcd_raw)
         visualizer.add_geometry(pcd_filtered)
-        geometry_added = True
+        state["geometry_added"] = True
 
     visualizer.poll_events()
     visualizer.update_renderer()
+
 
 
 

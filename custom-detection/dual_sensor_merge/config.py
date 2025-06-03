@@ -1,14 +1,8 @@
-import velodyne_decoder as vd
 # collection of globally used configuration options across all files
 
+import velodyne_decoder as vd
+import numpy as np
 
-
-###   # TODOS 27.05.2025
-###   - PCAP UDP replay time offset in separate threads (use TCP stamps)
-###   - config cleanup (transfer generated matrix e.g. using json parsing)
-###   - cpu usage after decoder? drops
-###   - implement rate limit
-###   - log frame drop stats
 
 
 #################
@@ -21,7 +15,6 @@ import velodyne_decoder as vd
 # "PCAP": stream from pcap dump file (uses PCAP_ options)
 DATA_RECEIVE_MODE = "PCAP"
 #DATA_RECEIVE_MODE = "UDP"
-
 
 
 #=== UDP Stream config ===
@@ -71,14 +64,29 @@ PCAP_FILE_FILTER_UDP_PORT_SENSOR_2 = None
 
 
 ###############################
-#####      Behaviour      #####
+#####  Script Behaviour   #####
 ###############################
 
 # create laz files for each merged frame in output/
-FILE_EXPORT_ENABLE = False
+FILE_EXPORT_ENABLE = True
 
-# create output/status.json regularly updated with latest values e.g. detected people
+# create output/status.json regularly updated with latest values e.g. detected people, framerates, processing duration...
 STATUS_FILE_ENABLED = True 
+
+# enable motion+people detection and tracking
+MOTION_DETECTION_ENABLED = True
+
+# === Visualizer window config ===
+# Options:
+# - "none"
+# - "sensor1"
+# - "sensor2"
+# - "merged_dual"         → sensor1 + transformed sensor2 in different colors
+# - "merged_filtered"     → merged + filtered comparison (visualize crop)
+# - "motion_detection"    → run tracking + show detected people
+VISUALIZER_WINDOW_1_MODE = "merged_dual"
+VISUALIZER_WINDOW_2_MODE = "merged_filtered"
+VISUALIZER_WINDOW_3_MODE = "motion_detection"
 
 # logging
 LOG_DEBUG_ENABLED   = False
@@ -90,8 +98,49 @@ LOG_ERROR_ENABLED   = True
 
 
 
+
+
 ###############################
-##### DETECTION ALGORITHM #####
+#####   POST PROCESSING   #####
+###############################
+
+# used in crop filter
+CROP_POINTCLOUD_POLYGON = [
+    (0.069658042, -0.195796701), # Sensor 1
+    (-4.188545, -5.2361961), # Schrank 6
+    (2.691041753, -11.679826846), # Tür
+    (7.267323630, -6.364732371) # Sensor 2
+]
+# TODO: add variable to enable polygon cropping
+
+
+# Transformation (Translation and Rotation) Matrix. calculated in calculate_transformation_maxtrix.py based on 3 Points
+# # 2025.05.26: works for `2025-05-20_dual-sensor-test_sensor-xxx.pcap.gz`
+# # Determined 3 reference points using recorded data
+# # TODO: outsource transformation matrix to CONFIG, or even separate .json file for automatic transfer
+# TRANSFORMATION_MATRIX_SENSOR_2 = np.array([
+#                 [ 0.62288801, -0.78223369,  0.01099957, -9.16811678],
+#                 [ 0.77832635,  0.6210714,   0.09207824, -1.12348435],
+#                 [-0.07885822, -0.04879318,  0.99569102, -0.61174572],
+#                 [ 0.0,         0.0,         0.0,         1.0]
+# ])
+
+# 2025.05.28: works for `data/testdata/2025-05-28_dual-sensor-test_sensor-xxx.pcap.gz` and later
+# Determined 3 reference points during live sensor setup
+# TODO: outsource transformation matrix to CONFIG, or even separate .json file for automatic transfer
+TRANSFORMATION_MATRIX_SENSOR_2 = np.array([
+             [ 0.66810762, 0.7309481, -0.13909377, 6.27345587],
+             [-0.74305003, 0.66519418,-0.07343942,-6.48224065],
+             [ 0.03884396, 0.15241907, 0.98755232, 1.1114492 ],
+             [ 0,          0,          0,          1        ],
+])
+
+
+
+
+
+###############################
+##### detection algorithm #####
 ###############################
 POINTCLOUD_HISTORY_BUFFER_SIZE = 9  # Rolling buffer of last N frames
 
@@ -105,16 +154,6 @@ MODE_SECOND_DATA_SET = "HIGHPASS+DENOISE"
 #MODE_SECOND_DATA_SET = "OLDEST" # to test buffer size
 
 
-# used in crop filter
-CROP_POINTCLOUD_POLYGON = [
-    (0.069658042, -0.195796701), # Sensor 1
-    (-4.188545, -5.2361961), # Schrank 6
-    (2.691041753, -11.679826846), # Tür
-    (7.267323630, -6.364732371) # Sensor 2
-]
-# TODO: add variable to enable polygon cropping
-
-
 PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
     # large polygon outsidepointcloud excluding door area (for detecing entered, exited)
     (0.425109267, -10.492938042), # left outside door
@@ -125,9 +164,9 @@ PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
     (-6.129019260, -6.429360390) # left room edge
 ]
 
-
 # for determining the crop polygon its a good idea to log the current pointcloud edges
-CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False
+CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False #deprecated, use cli to start instead
+
 
 
 
