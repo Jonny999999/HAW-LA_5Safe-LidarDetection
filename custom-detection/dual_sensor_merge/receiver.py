@@ -9,7 +9,7 @@ from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
 import time
 
-from config import PCAP_FILE_PACKET_DELAY, PCAP_FILE_FILTER_UDP_PORT, PCAP_FILE_REALTIME_PLAYBACK
+from config import PCAP_FILE_PACKET_DELAY, PCAP_FILE_REALTIME_PLAYBACK
 from utils import log_info, log_warn, log_error
 
 
@@ -39,7 +39,7 @@ def _udp_listener(udp_ip_addr, udp_port, packet_queue, sensor_id):
 
 
 ## --- PCAP reading mode ---
-def _pcap_stream_reader(pcap_path, packet_queue, sensor_id):
+def _pcap_stream_reader(pcap_path, packet_queue, sensor_id, filtered_udp_port=None):
     """
     PCAP mode: Streams raw packets from a PCAP file (supports .pcap and .pcap.gz).
     Replays packets using original capture timing, with optional additional delay.
@@ -61,7 +61,7 @@ def _pcap_stream_reader(pcap_path, packet_queue, sensor_id):
                     eth = Ether(pkt_data)
                     if IP in eth and UDP in eth:
                         udp_layer = eth[UDP]
-                        if PCAP_FILE_FILTER_UDP_PORT is None or udp_layer.dport == PCAP_FILE_FILTER_UDP_PORT:
+                        if filtered_udp_port is None or udp_layer.dport == filtered_udp_port:
                             # Delay to simulate real-time playback
                             if PCAP_FILE_REALTIME_PLAYBACK:
                                 ts = pkt_metadata.sec + pkt_metadata.usec / 1e6
@@ -87,8 +87,8 @@ def _pcap_stream_reader(pcap_path, packet_queue, sensor_id):
                         else:
                             no_match_counter += 1
                             if no_match_counter >= NO_MATCH_WARNING_THRESHOLD:
-                                log_warn(f"[receiver-{sensor_id}] No packets matched UDP port {PCAP_FILE_FILTER_UDP_PORT} for {NO_MATCH_WARNING_THRESHOLD} packets!")
-                                log_warn("-> hint: verify sensor port, or set 'PCAP_FILE_FILTER_UDP_PORT' to 'None' to skip this filter")
+                                log_warn(f"[receiver-{sensor_id}] No packets matched UDP port {filtered_udp_port} for {NO_MATCH_WARNING_THRESHOLD} packets!")
+                                log_warn("-> hint: verify sensor port, or set 'filtered_udp_port' to 'None' to skip this filter")
                 except queue.Full:
                     pass
                     #log_warn(f"[receiver {sensor_id}] Packet queue full. Dropping UDP packet.")
@@ -103,7 +103,7 @@ def _pcap_stream_reader(pcap_path, packet_queue, sensor_id):
 
 
 
-def start_receiver_thread(mode, packet_queue, sensor_id, *, pcap_path=None, udp_listen_ip=None, udp_port=None):
+def start_receiver_thread(mode, packet_queue, sensor_id, *, pcap_path=None, udp_listen_ip=None, udp_port=None, filtered_udp_port=None):
     """
     Starts a receiver thread based on the selected mode (PCAP or UDP).
 
@@ -120,7 +120,7 @@ def start_receiver_thread(mode, packet_queue, sensor_id, *, pcap_path=None, udp_
     if mode == "PCAP":
         p = Process(
             target=_pcap_stream_reader,
-            args=(pcap_path, packet_queue, sensor_id),
+            args=(pcap_path, packet_queue, sensor_id, filtered_udp_port),
             daemon=True
         )
     elif mode == "UDP":

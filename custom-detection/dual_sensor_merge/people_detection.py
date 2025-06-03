@@ -5,6 +5,7 @@ from utils import * # custom logging helpers
 from collections import deque
 import status_file as status_file
 from shapely.geometry import Polygon, Point
+import sys
 
 
 
@@ -214,6 +215,9 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
             continue
 
         if not was_inside and is_inside and idx not in track_room_occupancy.entered_ids:
+            # beep usind pc speaker
+            sys.stdout.write('\a')
+            sys.stdout.flush()
             log_warn("[track_room_occupancy] Person ENTERED room")
             status_file.add_log_entry_to_status_file("DETECTION_LAST_EVENTS", "Person ENTERED", trigger_file_update=False)
             track_room_occupancy.entered_ids.add(idx)

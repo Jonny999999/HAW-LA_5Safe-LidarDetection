@@ -4,6 +4,7 @@ import numpy as np
 import open3d as o3d
 import os
 import laspy
+import sys
 
 import config as config # import entire config (use with prefix)
 from receiver import start_receiver_thread
@@ -28,6 +29,20 @@ import multiprocessing
 
 
 
+# TODO 2025.06.03:
+#   - fix: exit correctly, finish UDP socket due to error OSError: [Errno 98] Address already in use after restarting in UDP mode
+#   - fix: random gui crash and sync fail (same as sensor disconnected), not happening when debug output on
+#   - remove timeout no data
+#   - fallback to 1 sensor if second one not sending
+#   - visualization interfacae
+#   - improved people tracking
+#   - loglevels?
+# 
+
+
+
+
+
 def main():
 
     # === Queue 1: Transfer of raw UDP/PCAP packets ===
@@ -35,8 +50,8 @@ def main():
     # Read by:  decoder.py → decode_loop()
     # 2 packet queues for 2 sensors
     # TODO: Reduce latency, temporary reduced queue size from 1000 to 100
-    udp_packet_queue_1 = Queue(maxsize=100)
-    udp_packet_queue_2 = Queue(maxsize=100)
+    udp_packet_queue_1 = Queue(maxsize=1000)
+    udp_packet_queue_2 = Queue(maxsize=1000)
 
 
     # === Queue 2: Completed 360° scan point clouds ===
@@ -60,7 +75,9 @@ def main():
         sensor_id =      1,
         pcap_path =      config.PCAP_FILE_1,
         udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR1,
-        udp_port =       config.UDP_PORT_SENSOR1)
+        udp_port =       config.UDP_PORT_SENSOR1,
+        filtered_udp_port= config.PCAP_FILE_FILTER_UDP_PORT_SENSOR_1
+        )
 
     start_receiver_thread(
         mode =           config.DATA_RECEIVE_MODE, # either 'UDP' or 'PCAP'
@@ -68,7 +85,9 @@ def main():
         sensor_id =      2,
         pcap_path =      config.PCAP_FILE_2,
         udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR2,
-        udp_port =       config.UDP_PORT_SENSOR2)
+        udp_port =       config.UDP_PORT_SENSOR2,
+        filtered_udp_port= config.PCAP_FILE_FILTER_UDP_PORT_SENSOR_2
+        )
 
 
 
@@ -139,7 +158,7 @@ def main():
 
     # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
     # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
-    LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 6)
+    LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
 
 
     # variable for logging processing duration
@@ -201,8 +220,8 @@ def main():
         # === Update single sensor visualization ===
         # update visualizer windows with new pointclouds
         log_debug(f"[main] Updating views with synced frame from {stamp:.3f}s")
-        #visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
-        #visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
+        visualize_single_frame(pc1, vis1, pcd1, color=[0.0, 0.5, 1.0])
+        visualize_single_frame(pc2, vis2, pcd2, color=[1.0, 0.5, 0.0])
 
         # Merge
         # TODO add transformation here
@@ -232,7 +251,7 @@ def main():
         else:
             # === Visualize transformed,merged,cropped points ===
             # draw both clouds (different colors)
-            if False:
+            if True:
                 # visualize sensor merge (points sensor1 + transformed points sensor2 in red)
                 visualize_dual_frame(pc1, np.asarray(pc2_03dpc.points), vis_merged)
             else:

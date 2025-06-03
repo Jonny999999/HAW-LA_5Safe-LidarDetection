@@ -37,10 +37,20 @@ UDP_PORT_SENSOR2 = 5004
 #PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
 #PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+
 #PCAP_FILE_1 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
 #PCAP_FILE_2 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
-PCAP_FILE_2 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
-PCAP_FILE_1 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
+
+#PCAP_FILE_1 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE_2 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
+
+PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
+PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
+
+#PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
+#PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
+
+
 
 #Use packet timestamps to playback at original speed if possible
 PCAP_FILE_REALTIME_PLAYBACK = True
@@ -53,7 +63,8 @@ PCAP_FILE_PACKET_DELAY = 0
 # Ignore packets that dont have this target port - set to None to disable this filter
 # useful when using unfiltered wireshark dumps, prevents warning spam and decoder confusion
 # FIXME: we need to configure 2 ports when using 2 sensors if used?
-PCAP_FILE_FILTER_UDP_PORT = None
+PCAP_FILE_FILTER_UDP_PORT_SENSOR_1 = None
+PCAP_FILE_FILTER_UDP_PORT_SENSOR_2 = None
 
 
 
@@ -71,7 +82,7 @@ STATUS_FILE_ENABLED = True
 
 # logging
 LOG_DEBUG_ENABLED   = False
-LOG_INFO_ENABLED    = True
+LOG_INFO_ENABLED    = False
 LOG_WARN_ENABLED    = True
 LOG_ERROR_ENABLED   = True
 
@@ -107,7 +118,7 @@ CROP_POINTCLOUD_POLYGON = [
 PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
     # large polygon outsidepointcloud excluding door area (for detecing entered, exited)
     (0.425109267, -10.492938042), # left outside door
-    (1.897194386, -9.769321442), # inner edge room
+    #(1.897194386, -9.769321442), # inner edge room
     (3.835275173, -10.872682571), # right wall room
     (7.989156246, -6.492611885), # top right room edge
     (0.228421226, 0.920938611), # top room edge (sensor1)

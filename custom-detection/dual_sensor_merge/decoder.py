@@ -31,7 +31,7 @@ def decode_loop(frame_queue, udp_packet_queue, sensor_id):
 
         # check for corrent size
         if len(packet) != vd.PACKET_SIZE:
-            log_warn(f"[decoder {sensor_id}] Skipping malformed packet of unexpected size. (expected {vd.PACKET_SIZE} but received {len(packet)})")
+            log_warn(f"[decoder {sensor_id}] Skipping malformed packet of unexpected size. (expected {vd.PACKET_SIZE} but received {len(packet)}) -> filter pcap file by port or enable port filter in config.py")
             continue
         else:
             udp_packet_count += 1
@@ -91,7 +91,7 @@ def decode_loop(frame_queue, udp_packet_queue, sensor_id):
 
 
 
-def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=0.05, max_buffer_size=50):
+def frame_synchronizer(queue_1, queue_2, synced_queue, tolerance=0.1, max_buffer_size=500):
     """
     Synchronizes frames from two sources by timestamp.
     Uses a small buffer and finds best match instead of aggressively discarding.
