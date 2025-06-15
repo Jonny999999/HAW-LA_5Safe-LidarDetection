@@ -22,6 +22,7 @@ from playback_control import start_playback_input_thread, should_advance_frame, 
 import filters as filters
 import exporter
 from status_file import update_status_single_key
+from tcp_senderthread import run_sender_thread
 
 
 
@@ -116,6 +117,12 @@ def main():
         udp_port =       config.UDP_PORT_SENSOR2,
         filtered_udp_port= config.PCAP_FILE_FILTER_UDP_PORT_SENSOR_2
         )
+    
+
+    # === Start Sender Thread for Dashboard ===
+    # Starts thread to send status file in json format to client that connects to the Server
+    # Currently only one Client can connect to the Server
+    run_sender_thread()
 
 
     # === Start decoding processes ===

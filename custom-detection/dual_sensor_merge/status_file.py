@@ -11,10 +11,28 @@ STATUS_FILE_PATH = "output/status.json"
 MAX_LOG_ENTRIES = 5
 
 # === Shared memory dictionary and locking ===
-_manager = Manager()
-_status_cache = _manager.dict()
-_status_lock = Lock()
+# for the script to work on windows, we need to initialize the variables during runtime 
+# instead of here at global file scope -> initializing ad None first
+_manager = None
+_status_cache = None
+_status_lock = None
 _first_write_done = False
+_variables_initialized = False
+
+## _manager = Manager()
+## _status_cache = _manager.dict()
+## _status_lock = Lock()
+## _first_write_done = False
+
+
+def _init_status_variables():
+    global _manager, _status_cache, _status_lock, _variables_initialized
+    if not _variables_initialized:
+        _manager = Manager()
+        _status_cache = _manager.dict()
+        _status_lock = Lock()
+        _variables_initialized = True
+
 
 
 # === Public API ===
@@ -26,6 +44,7 @@ def update_status_single_key(key, value, trigger_file_update=True):
     """
     if not STATUS_FILE_ENABLED:
         return
+    _init_status_variables() # ensure global variables are initialized
     with _status_lock:
         _ensure_output_file()
         _status_cache[key] = value
@@ -40,6 +59,7 @@ def update_status_bulk(new_data: dict, trigger_file_update=True):
     """
     if not STATUS_FILE_ENABLED:
         return
+    _init_status_variables() # ensure global variables are initialized
     with _status_lock:
         _ensure_output_file()
         _status_cache.update(new_data)
@@ -54,8 +74,23 @@ def get_status(key, default=None):
     if not STATUS_FILE_ENABLED:
         print("[ERR] [status_file.json] Can't `get_status` because status file is disabled")
         return default
+    _init_status_variables() # ensure global variables are initialized
     with _status_lock:
         return _status_cache.get(key, default)
+
+
+def get_full_status_as_json():
+    """
+    Return the full status cache as a JSON string.
+    """
+    
+    if not STATUS_FILE_ENABLED:
+        print("[ERR] [status_file.json] Can't `get_full_status_json` because status file is disabled")
+        return "{}"
+    _init_status_variables() # ensure global variables are initialized
+    with _status_lock:
+        return json.dumps(dict(_status_cache))
+
 
 
 def add_log_entry_to_status_file(key, message, trigger_file_update=True):
@@ -65,6 +100,7 @@ def add_log_entry_to_status_file(key, message, trigger_file_update=True):
     """
     if not STATUS_FILE_ENABLED:
         return
+    _init_status_variables() # ensure global variables are initialized
     now_str = datetime.now().strftime("%H:%M:%S")
     entry = f"{now_str} - {message}"
 
@@ -84,6 +120,7 @@ def flush_status_to_file():
     """
     if not STATUS_FILE_ENABLED:
         return
+    _init_status_variables() # ensure global variables are initialized
     with _status_lock:
         _write_status()
 
@@ -97,6 +134,7 @@ def _ensure_output_file():
     global _first_write_done
     os.makedirs(os.path.dirname(STATUS_FILE_PATH), exist_ok=True)
     if not _first_write_done:
+        _init_status_variables()
         _status_cache.clear()
         _write_status()
         _first_write_done = True
