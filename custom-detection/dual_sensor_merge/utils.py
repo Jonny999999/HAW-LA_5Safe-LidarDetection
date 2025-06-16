@@ -1,4 +1,5 @@
 from colorama import Fore, Style
+import numpy as np
 
 from config import LOG_INFO_ENABLED, LOG_DEBUG_ENABLED, LOG_WARN_ENABLED, LOG_ERROR_ENABLED
 from status_file import add_log_entry_to_status_file
@@ -20,3 +21,26 @@ def log_error(msg):
     if LOG_ERROR_ENABLED:
         print(f"{Fore.RED}[ERROR] {msg}{Style.RESET_ALL}")
         add_log_entry_to_status_file(f"LOG_LAST_ERRORS", f"'{msg}'")
+
+
+
+# for encoding a numpy array in json, we need to serialize it
+def serialize_numpy_array(arr):
+    """
+    Converts a numpy array (or anything convertible) to a JSON-serializable structure.
+    Accepts both np.ndarray and regular Python lists.
+    """
+    if not isinstance(arr, np.ndarray):
+        try:
+            arr = np.array(arr)
+        except Exception as e:
+            raise TypeError(f"serialize_numpy_array: Could not convert input to ndarray. Got {type(arr)}. Error: {e}")
+
+    return {
+        "data": arr.flatten().tolist(),
+        "shape": arr.shape,
+        "dtype": str(arr.dtype)
+    }
+
+def deserialize_numpy_array(obj):
+    return np.array(obj["data"], dtype=obj["dtype"]).reshape(obj["shape"])

@@ -16,9 +16,9 @@ MAX_LOG_ENTRIES = 5
 _manager = None
 _status_cache = None
 _status_lock = None
+_dashboard_extra_cache = None
 _first_write_done = False
 _variables_initialized = False
-
 ## _manager = Manager()
 ## _status_cache = _manager.dict()
 ## _status_lock = Lock()
@@ -26,12 +26,14 @@ _variables_initialized = False
 
 
 def _init_status_variables():
-    global _manager, _status_cache, _status_lock, _variables_initialized
+    global _manager, _status_cache, _dashboard_extra_cache, _status_lock, _variables_initialized
     if not _variables_initialized:
         _manager = Manager()
         _status_cache = _manager.dict()
+        _dashboard_extra_cache = _manager.dict()
         _status_lock = Lock()
         _variables_initialized = True
+
 
 
 
@@ -123,6 +125,41 @@ def flush_status_to_file():
     _init_status_variables() # ensure global variables are initialized
     with _status_lock:
         _write_status()
+
+
+
+
+
+def update_dashboard_key(key, value):
+    """
+    Add or update a key that is only included in the TCP dashboard data.
+    These values are not written to the status.json file.
+    """
+    if not STATUS_FILE_ENABLED:
+        return
+    _init_status_variables()
+    with _status_lock:
+        _dashboard_extra_cache[key] = value
+
+def get_dashboard_and_status_data_as_json():
+    """
+    Return a full dashboard JSON string containing:
+    - 'status': current status cache (same as status.json)
+    - 'dashboard': extra values only for the live dashboard (e.g. pointclouds)
+    """
+    if not STATUS_FILE_ENABLED:
+        return "{}"
+    _init_status_variables()
+    with _status_lock:
+        data = {
+            "status": dict(_status_cache),
+            "dashboard": dict(_dashboard_extra_cache)
+        }
+        return json.dumps(data)
+
+
+
+
 
 
 # === Internal helpers ===

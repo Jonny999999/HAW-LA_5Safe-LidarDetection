@@ -16,12 +16,12 @@ from receiver import start_receiver_thread
 from decoder import decode_loop, frame_synchronizer
 from processor import process_and_visualize_latest_frame
 from visualizer import pick_point_from_cloud, update_visualizer_by_mode, initialize_all_used_visualizer_windows, get_visualizer_by_mode, handle_inputs_of_active_visualizers
-from utils import log_info, log_warn, log_debug
+from utils import log_info, log_warn, log_debug, serialize_numpy_array
 from shared_types import StampCloudTuple
 from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
 import filters as filters
 import exporter
-from status_file import update_status_single_key
+from status_file import update_status_single_key, update_dashboard_key
 from tcp_senderthread import run_sender_thread
 
 
@@ -188,6 +188,8 @@ def main():
         # also drop points that are above certain z coordinate (1m)
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
+        # === Update cached pointcloud that is sent to dashboard via TCP ===
+        update_dashboard_key("pointcloud_merged_filtered_seralizednumpyarray", serialize_numpy_array(pointcloud_merged_filtered_array))
 
         # === Update visualizer windows ===
         # Define context with all needed arrays for visualization functions
