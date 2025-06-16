@@ -3,6 +3,7 @@ import numpy as np
 import socket
 import json
 import time
+import pprint
 
 # Konfiguration
 HOST = 'localhost'   # IP-Adresse des Senders
@@ -16,6 +17,27 @@ vis = o3d.visualization.Visualizer()
 vis.create_window(window_name="Empfänger: Punktwolke + Personenanzahl")
 vis.add_geometry(pcd)
 vis.get_render_option().point_size = 3.0
+
+
+
+def deserialize_numpy_array(obj):
+    return np.array(obj["data"], dtype=obj["dtype"]).reshape(obj["shape"])
+
+# Example:
+# raw = '{"pointcloud_merged_filtered": {"data": [...], "shape": [...], "dtype": "float32"}}'
+
+
+def clip_large_lists(obj, max_items=20):
+    if isinstance(obj, list):
+        if len(obj) > max_items:
+            return obj[:max_items] + ["..."]
+        else:
+            return [clip_large_lists(i, max_items) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: clip_large_lists(v, max_items) for k, v in obj.items()}
+    else:
+        return obj
+
 
 # === Verbindung aufbauen mit Retry ===
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -50,18 +72,25 @@ while True:
                 line, buffer = buffer.split('\n', 1)
                 try:
                     obj = json.loads(line)
-
-                    moving_people = obj.get("DETECTION_MOVING_PEOPLE_INSIDE")
-                    print(json.dumps(obj, indent=2))
-                    print(moving_people)
+                    #moving_people = obj.get("DETECTION_MOVING_PEOPLE_INSIDE")
+                    print("\n\n=======================")
+                    print("==== Received dict: ====")
+                    print("========================")
+                    pprint.pprint(clip_large_lists(obj, max_items=20), depth=10, width=150, compact=True)
+                    # print(moving_people)
                     # vis.update_geometry(pcd)
+
+                    # de-serialize pointcloud from json to numpy array
+                    pointcloud_data = obj["dashboard"]["pointcloud_merged_filtered_serializednumpyarray"]
+                    pointcloud_merged_filtered_numpyarray = deserialize_numpy_array(pointcloud_data)
+
                 except json.JSONDecodeError:
                     print("[Empfänger] Ungültige JSON-Zeile.")
     except BlockingIOError:
         pass  # Kein neues Datenpaket da – weitermachen
     except Exception as e:
         print(f"[Empfänger] Fehler: {e}")
-        break
+        #break
 
     vis.poll_events()
     vis.update_renderer()
