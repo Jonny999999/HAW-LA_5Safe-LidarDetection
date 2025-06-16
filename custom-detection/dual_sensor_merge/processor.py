@@ -8,7 +8,6 @@ from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_boxe
 from filters import apply_highpass_filter, remove_isolated_points, crop_points_within_xy_polygon
 from people_detection import estimate_moving_people, detect_moving_clusters, track_room_occupancy
 from collections import deque
-from status_file import update_dashboard_key
 
 
 # === Rolling buffer for motion filtering ===
@@ -16,7 +15,7 @@ from status_file import update_dashboard_key
 # This stores the *XYZ arrays* (after [:, :3])
 pointcloud_history_buffer = deque(maxlen=POINTCLOUD_HISTORY_BUFFER_SIZE)
 
-def process_and_visualize_latest_frame(new_pointcloud, visualizer):
+def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache):
     """
     Processes the latest frame in the rolling buffer:
     - Applies motion filters (high-pass, denoise)
@@ -67,7 +66,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer):
         return
 
     # === Update cached pointcloud that is sent to dashboard via TCP ===
-    update_dashboard_key("pointcloud_highpass_denoised_seralizednumpyarray", serialize_numpy_array(filtered_frame))
+    status_cache.update_status_key("pointcloud_highpass_denoised_seralizednumpyarray", serialize_numpy_array(filtered_frame))
 
     import open3d as o3d
     import numpy as np
@@ -86,14 +85,14 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer):
 
     # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
-        clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, min_z_height=0.6)
+        clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, min_z_height=0.6, status_cache=status_cache)
         if visualizer is not None:
             draw_bounding_boxes(clusters, visualizer)
             draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
-        people_inside = track_room_occupancy(clusters, polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON)
+        people_inside = track_room_occupancy(clusters, polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, status_cache=status_cache)
         # === Update cached clusters that is sent to dashboard via TCP ===
         #print(f"Cluster type: {type(clusters[0])}, content: {clusters[0]}")
-        update_dashboard_key(
+        status_cache.update_status_key(
             "moving_peope_clusters_arrayofserializednumpyarrays",
             [serialize_numpy_array(cluster[1].points) for cluster in clusters]
         )

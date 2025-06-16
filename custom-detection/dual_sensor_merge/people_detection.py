@@ -3,7 +3,6 @@ import open3d as o3d
 from config import COUNT_PEOPLE_DRAW_BOXES
 from utils import * # custom logging helpers
 from collections import deque
-import status_file as status_file
 from shapely.geometry import Polygon, Point
 import sys
 
@@ -103,7 +102,7 @@ drawn_bounding_boxes = []
 
 
 # ========== CLUSTER DETECTION ==========
-def detect_moving_clusters(pointcloud_np, distance_threshold=0.5, min_points=30, max_points=5000, min_z_height=0.0):
+def detect_moving_clusters(pointcloud_np, distance_threshold=0.5, min_points=30, max_points=5000, min_z_height=0.0, status_cache=None):
     """
     Detects moving clusters in a high-pass filtered point cloud.
 
@@ -153,7 +152,8 @@ def detect_moving_clusters(pointcloud_np, distance_threshold=0.5, min_points=30,
         result_clusters.append((centroid, cluster))
 
     log_debug(f"[detect clusters] detected clusters: {len(result_clusters)}")
-    status_file.update_status_single_key("DETECTION_MOVING_PEOPLE_INSIDE", f"{len(result_clusters)}")
+    if status_cache:
+        status_cache.update_dashboard_key("DETECTION_MOVING_PEOPLE_INSIDE", f"{len(result_clusters)}")
     return result_clusters
 
 
@@ -162,7 +162,7 @@ def detect_moving_clusters(pointcloud_np, distance_threshold=0.5, min_points=30,
 people_inside_incremented = 0
 
 # ========== ROOM ENTRY/EXIT TRACKING ==========
-def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
+def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, status_cache=None):
     """
     Tracks people entering or leaving a room via a virtual door polygon.
 
@@ -219,7 +219,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
             sys.stdout.write('\a')
             sys.stdout.flush()
             log_warn("[track_room_occupancy] Person ENTERED room")
-            status_file.add_log_entry_to_status_file("DETECTION_LAST_EVENTS", "Person ENTERED", trigger_file_update=False)
+            status_cache.add_log_entry("DETECTION_LAST_EVENTS", "Person ENTERED", trigger_file_update=False)
             track_room_occupancy.entered_ids.add(idx)
             track_room_occupancy.exited_ids.discard(idx)
             people_inside += 1
@@ -227,7 +227,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
 
         elif was_inside and not is_inside and idx not in track_room_occupancy.exited_ids:
             log_warn("[track_room_occupancy] Person LEFT room")
-            status_file.add_log_entry_to_status_file("DETECTION_LAST_EVENTS", "Person LEFT", trigger_file_update=False)
+            status_cache.add_log_entry("DETECTION_LAST_EVENTS", "Person LEFT", trigger_file_update=False)
             track_room_occupancy.exited_ids.add(idx)
             track_room_occupancy.entered_ids.discard(idx)
             people_inside -= 1
@@ -241,7 +241,8 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None):
             people_inside_incremented = 0
 
     log_debug(f"[track_room_occupancy] ABS-MOVING-PEOPLE-INSIDE: {max(people_inside, 0)}, INCREMENTED-LEFT-ENTERED-PEOPLE: {people_inside_incremented}")
-    status_file.update_status_single_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{people_inside_incremented}")
+    if status_cache:
+        status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{people_inside_incremented}")
 
 
     return max(people_inside, 0)

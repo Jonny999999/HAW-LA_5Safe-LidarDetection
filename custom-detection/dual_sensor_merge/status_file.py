@@ -4,208 +4,124 @@ import time
 from datetime import datetime
 from multiprocessing import Manager, Lock
 
-from config import STATUS_FILE_ENABLED
 
-# === Config ===
-STATUS_FILE_PATH = "output/status.json"
-MAX_LOG_ENTRIES = 5
-
-# === Shared memory dictionary and locking ===
-# for the script to work on windows, we need to initialize the variables during runtime 
-# instead of here at global file scope -> initializing ad None first
-_manager = None
-_status_cache = None
-_status_lock = None
-_dashboard_extra_cache = None
-_first_write_done = False
-_variables_initialized = False
-## _manager = Manager()
-## _status_cache = _manager.dict()
-## _status_lock = Lock()
-## _first_write_done = False
-
-
-def _init_status_variables():
-    global _manager, _status_cache, _dashboard_extra_cache, _status_lock, _variables_initialized
-    if not _variables_initialized:
-        _manager = Manager()
-        _status_cache = _manager.dict()
-        _dashboard_extra_cache = _manager.dict()
-        _status_lock = Lock()
-        _variables_initialized = True
-
-
-
-
-# === Public API ===
-
-def update_status_single_key(key, value, trigger_file_update=True):
+class GlobalStatusCache:
     """
-    Update or insert a single key into the shared status cache.
-    If trigger_file_update=True, write the entire status to disk immediately.
+    Thread- and process-safe global cache for storing runtime status and dashboard data.
+    Allows concurrent updates from multiple processes using shared memory (Manager.dict()).
     """
-    if not STATUS_FILE_ENABLED:
-        return
-    _init_status_variables() # ensure global variables are initialized
-    with _status_lock:
-        _ensure_output_file()
-        _status_cache[key] = value
-        if trigger_file_update:
-            _write_status()
 
+    def __init__(self, status_file_path="output/status.json", max_log_entries=5, status_file_enabled=True, status_file_creation_enabled=True):
+        self.status_file_enabled = status_file_enabled
+        self.status_file_path = status_file_path
+        self.max_log_entries = max_log_entries
+        self.status_file_creation_enabled = status_file_creation_enabled
 
-def update_status_bulk(new_data: dict, trigger_file_update=True):
-    """
-    Update multiple keys at once.
-    If trigger_file_update=True, write the entire status to disk immediately.
-    """
-    if not STATUS_FILE_ENABLED:
-        return
-    _init_status_variables() # ensure global variables are initialized
-    with _status_lock:
-        _ensure_output_file()
-        _status_cache.update(new_data)
-        if trigger_file_update:
-            _write_status()
+        self._manager = Manager()
+        self._status_cache = self._manager.dict()
+        self._dashboard_cache = self._manager.dict()
+        self._lock = Lock()
+        self._first_write_done = False
 
+    # === Public API ===
 
-def get_status(key, default=None):
-    """
-    Read a single key from the status cache.
-    """
-    if not STATUS_FILE_ENABLED:
-        print("[ERR] [status_file.json] Can't `get_status` because status file is disabled")
-        return default
-    _init_status_variables() # ensure global variables are initialized
-    with _status_lock:
-        return _status_cache.get(key, default)
+    def update_status_key(self, key, value, trigger_file_update=True):
+        if not self.status_file_enabled:
+            return
+        with self._lock:
+            self._ensure_output_file()
+            self._status_cache[key] = value
+            if trigger_file_update:
+                self._write_status()
 
+    def update_status_bulk(self, data: dict, trigger_file_update=True):
+        if not self.status_file_enabled:
+            return
+        with self._lock:
+            self._ensure_output_file()
+            self._status_cache.update(data)
+            if trigger_file_update:
+                self._write_status()
 
-def get_full_status_as_json():
-    """
-    Return the full status cache as a JSON string.
-    """
-    
-    if not STATUS_FILE_ENABLED:
-        print("[ERR] [status_file.json] Can't `get_full_status_json` because status file is disabled")
-        return "{}"
-    _init_status_variables() # ensure global variables are initialized
-    with _status_lock:
-        return json.dumps(dict(_status_cache))
+    def get_status_key(self, key, default=None):
+        if not self.status_file_enabled:
+            return default
+        with self._lock:
+            return self._status_cache.get(key, default)
 
+    def get_full_status_json(self):
+        if not self.status_file_enabled:
+            return "{}"
+        with self._lock:
+            return json.dumps(dict(self._status_cache))
 
+    def add_log_entry(self, key, message, trigger_file_update=True):
+        if not self.status_file_enabled:
+            return
+        with self._lock:
+            self._ensure_output_file()
+            now = datetime.now().strftime("%H:%M:%S")
+            entry = f"{now} - {message}"
+            lst = list(self._status_cache.get(key, []))
+            lst.append(entry)
+            self._status_cache[key] = lst[-self.max_log_entries:]
+            if trigger_file_update:
+                self._write_status()
 
-def add_log_entry_to_status_file(key, message, trigger_file_update=True):
-    """
-    Append a timestamped message to a list in the status file.
-    Automatically keeps only the latest MAX_LOG_ENTRIES.
-    """
-    if not STATUS_FILE_ENABLED:
-        return
-    _init_status_variables() # ensure global variables are initialized
-    now_str = datetime.now().strftime("%H:%M:%S")
-    entry = f"{now_str} - {message}"
+    def update_dashboard_key(self, key, value):
+        if not self.status_file_enabled:
+            return
+        with self._lock:
+            self._dashboard_cache[key] = value
 
-    with _status_lock:
-        _ensure_output_file()
-        log_list = list(_status_cache.get(key, []))  # ensure it's a real list
-        log_list.append(entry)
-        _status_cache[key] = log_list[-MAX_LOG_ENTRIES:]
-        if trigger_file_update:
-            _write_status()
+    def get_dashboard_and_status_data_as_json(self):
+        if not self.status_file_enabled:
+            return "{}"
+        with self._lock:
+            return json.dumps({
+                "status": dict(self._status_cache),
+                "dashboard": dict(self._dashboard_cache)
+            })
 
+    def flush(self):
+        if not self.status_file_enabled:
+            return
+        with self._lock:
+            self._write_status()
 
-def flush_status_to_file():
-    """
-    Manually flush the in-memory status cache to disk.
-    Can be used periodically in a background thread or process.
-    """
-    if not STATUS_FILE_ENABLED:
-        return
-    _init_status_variables() # ensure global variables are initialized
-    with _status_lock:
-        _write_status()
-
-
-
-
-
-def update_dashboard_key(key, value):
-    """
-    Add or update a key that is only included in the TCP dashboard data.
-    These values are not written to the status.json file.
-    """
-    if not STATUS_FILE_ENABLED:
-        return
-    _init_status_variables()
-    with _status_lock:
-        _dashboard_extra_cache[key] = value
-
-def get_dashboard_and_status_data_as_json():
-    """
-    Return a full dashboard JSON string containing:
-    - 'status': current status cache (same as status.json)
-    - 'dashboard': extra values only for the live dashboard (e.g. pointclouds)
-    """
-    if not STATUS_FILE_ENABLED:
-        return "{}"
-    _init_status_variables()
-    with _status_lock:
-        data = {
-            "status": dict(_status_cache),
-            "dashboard": dict(_dashboard_extra_cache)
-        }
-        return json.dumps(data)
-
-
-
-
-
-
-# === Internal helpers ===
-
-def _ensure_output_file():
-    """
-    Creates the output directory and clears the file on first write.
-    """
-    global _first_write_done
-    os.makedirs(os.path.dirname(STATUS_FILE_PATH), exist_ok=True)
-    if not _first_write_done:
-        _init_status_variables()
-        _status_cache.clear()
-        _write_status()
-        _first_write_done = True
-
-
-def _write_status():
-    try:
-        def sort_key(k):
-            if k.startswith("DETECTION_"):
-                return (0, k)  # Highest priority
-            elif k.startswith("LOG_") or k.startswith("LAST_WARNINGS"):
-                return (2, k)  # Lowest priority
-            else:
-                return (1, k)  # Middle
-
-        sorted_status = {k: _status_cache[k] for k in sorted(_status_cache.keys(), key=sort_key)}
-
-        with open(STATUS_FILE_PATH, "w") as f:
-            json.dump(sorted_status, f, indent=2)
-    except Exception as e:
-        print(f"[status_io] Failed to write {STATUS_FILE_PATH}: {e}")
-
-
-def _load_status():
-    """
-    Optional: Load existing status.json into memory at startup.
-    Can be called once from main before updates start.
-    """
-    global _status_cache
-    if os.path.exists(STATUS_FILE_PATH):
+    def load_from_file(self):
+        if not os.path.exists(self.status_file_path):
+            return
         try:
-            with open(STATUS_FILE_PATH, "r") as f:
+            with open(self.status_file_path, "r") as f:
                 loaded = json.load(f)
-                with _status_lock:
-                    _status_cache.update(loaded)
+                with self._lock:
+                    self._status_cache.update(loaded)
         except Exception as e:
-            print(f"[status_io] Failed to load {STATUS_FILE_PATH}: {e}")
+            print(f"[GlobalStatusCache] Failed to load from file: {e}")
+
+    # === Internal Helpers ===
+
+    def _ensure_output_file(self):
+        if self._first_write_done:
+            return
+        os.makedirs(os.path.dirname(self.status_file_path), exist_ok=True)
+        self._status_cache.clear()
+        self._write_status()
+        self._first_write_done = True
+
+    def _write_status(self):
+        if self.status_file_creation_enabled:
+            try:
+                def sort_key(k):
+                    if k.startswith("DETECTION_"):
+                        return (0, k)
+                    elif k.startswith("LOG_") or k.startswith("LAST_WARNINGS"):
+                        return (2, k)
+                    else:
+                        return (1, k)
+                sorted_dict = {k: self._status_cache[k] for k in sorted(self._status_cache.keys(), key=sort_key)}
+                with open(self.status_file_path, "w") as f:
+                    json.dump(sorted_dict, f, indent=2)
+            except Exception as e:
+                print(f"[GlobalStatusCache] Failed to write status file: {e}")

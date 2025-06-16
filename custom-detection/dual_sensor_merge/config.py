@@ -75,6 +75,9 @@ FILE_EXPORT_ENABLE = True
 
 # create output/status.json regularly updated with latest values e.g. detected people, framerates, processing duration...
 STATUS_FILE_ENABLED = True 
+STATUS_FILE_PATH = "output/status.json"
+
+DASHBOARD_TCP_SERVER_ENABLED = True
 
 # enable motion+people detection and tracking
 MOTION_DETECTION_ENABLED = True
