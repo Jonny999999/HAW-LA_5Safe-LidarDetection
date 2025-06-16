@@ -9,7 +9,7 @@ from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
 import time
 
-from config import PCAP_FILE_PACKET_DELAY, PCAP_FILE_REALTIME_PLAYBACK
+from config import PCAP_FILE_PACKET_DELAY, PCAP_FILE_REALTIME_PLAYBACK, PCAP_LOOP_WHEN_FILE_COMPLETED
 from utils import log_info, log_warn, log_error
 
 
@@ -40,63 +40,76 @@ def _udp_listener(udp_ip_addr, udp_port, packet_queue, sensor_id):
 
 ## --- PCAP reading mode ---
 def _pcap_stream_reader(pcap_path, packet_queue, sensor_id, filtered_udp_port=None):
-    """
-    PCAP mode: Streams raw packets from a PCAP file (supports .pcap and .pcap.gz).
-    Replays packets using original capture timing, with optional additional delay.
-    """
     NO_MATCH_WARNING_THRESHOLD = 500
     MAX_PACKET_DELAY_MS = 1
     no_match_counter = 0
-    replay_start_time = time.time()
-    pcap_start_time = None
+    loop_count = 0
+    cumulative_time_offset = 0.0  # Offset applied to timestamps with each loop
+
     log_info(f"[receiver-{sensor_id}] Streaming packets from PCAP file: {pcap_path}")
-    
-    try:
-        # Detect .gz and open accordingly
-        open_func = gzip.open if pcap_path.endswith(".gz") else open
-        with open_func(pcap_path, 'rb') as f:
-            reader = RawPcapReader(f)
-            for pkt_data, pkt_metadata in reader:
-                try:
-                    eth = Ether(pkt_data)
-                    if IP in eth and UDP in eth:
-                        udp_layer = eth[UDP]
-                        if filtered_udp_port is None or udp_layer.dport == filtered_udp_port:
-                            # Delay to simulate real-time playback
-                            if PCAP_FILE_REALTIME_PLAYBACK:
+
+    open_func = gzip.open if pcap_path.endswith(".gz") else open
+
+    while True:
+        try:
+            with open_func(pcap_path, 'rb') as f:
+                reader = RawPcapReader(f)
+                replay_start_time = time.time()
+                pcap_start_time = None
+
+                for pkt_data, pkt_metadata in reader:
+                    try:
+                        eth = Ether(pkt_data)
+                        if IP in eth and UDP in eth:
+                            udp_layer = eth[UDP]
+                            if filtered_udp_port is None or udp_layer.dport == filtered_udp_port:
+                                # Real-time playback simulation
                                 ts = pkt_metadata.sec + pkt_metadata.usec / 1e6
                                 if pcap_start_time is None:
                                     pcap_start_time = ts
-                                # Compute target wall-clock time
-                                target_time = replay_start_time + (ts - pcap_start_time)
-                                now = time.time()
-                                sleep_time = target_time - now
-                                if sleep_time > MAX_PACKET_DELAY_MS:
-                                    log_warn(f"[receiver-{sensor_id}] pcap file contains packets with a {sleep_time} ms pause. Limiting delay to threshold of {MAX_PACKET_DELAY_MS} ms")
-                                    time.sleep(MAX_PACKET_DELAY_MS)
-                                elif sleep_time > 0:
-                                    time.sleep(sleep_time)
-                            # Optional: add additional custom PCAP_FILE_PACKET_DELAY
-                            if PCAP_FILE_PACKET_DELAY > 0:
-                                time.sleep(PCAP_FILE_PACKET_DELAY)
+                                adjusted_ts = ts - pcap_start_time + cumulative_time_offset
 
-                            data = bytes(udp_layer.payload) # acutal packet data
-                            timestamp = pkt_metadata.sec + pkt_metadata.usec / 1e6  # Absolute timestamp from PCAP
-                            packet_queue.put_nowait((timestamp, data))
-                            no_match_counter = 0 # reset error count at valid packet
-                        else:
-                            no_match_counter += 1
-                            if no_match_counter >= NO_MATCH_WARNING_THRESHOLD:
-                                log_warn(f"[receiver-{sensor_id}] No packets matched UDP port {filtered_udp_port} for {NO_MATCH_WARNING_THRESHOLD} packets!")
-                                log_warn("-> hint: verify sensor port, or set 'filtered_udp_port' to 'None' to skip this filter")
-                except queue.Full:
-                    pass
-                    #log_warn(f"[receiver {sensor_id}] Packet queue full. Dropping UDP packet.")
-                except Exception as pkt_err:
-                    log_warn(f"[receiver-{sensor_id}] Malformed packet skipped: {pkt_err}")
-    except Exception as e:
-        log_error(f"[receiver-{sensor_id}] Failed to read PCAP: {e}")
+                                # Wall-clock replay delay
+                                if PCAP_FILE_REALTIME_PLAYBACK:
+                                    target_time = replay_start_time + (ts - pcap_start_time)
+                                    sleep_time = target_time - time.time()
+                                    if sleep_time > MAX_PACKET_DELAY_MS:
+                                        log_warn(f"[receiver-{sensor_id}] pcap file contains packets with a {sleep_time} ms pause. Limiting delay to {MAX_PACKET_DELAY_MS} ms")
+                                        time.sleep(MAX_PACKET_DELAY_MS)
+                                    elif sleep_time > 0:
+                                        time.sleep(sleep_time)
+                                if PCAP_FILE_PACKET_DELAY > 0:
+                                    time.sleep(PCAP_FILE_PACKET_DELAY)
 
+                                # Push to queue with adjusted timestamp
+                                data = bytes(udp_layer.payload)
+                                packet_queue.put_nowait((adjusted_ts, data))
+                                no_match_counter = 0
+                            else:
+                                no_match_counter += 1
+                                if no_match_counter >= NO_MATCH_WARNING_THRESHOLD:
+                                    log_warn(f"[receiver-{sensor_id}] No packets matched UDP port {filtered_udp_port} for {NO_MATCH_WARNING_THRESHOLD} packets!")
+                    except queue.Full:
+                        pass
+                    except Exception as pkt_err:
+                        log_warn(f"[receiver-{sensor_id}] Malformed packet skipped: {pkt_err}")
+
+            # End of file reached
+            print("===================================")
+            print("===== END OF PCAP FILE REACHED ====")
+            print(f"File: '{pcap_path}'")
+            print("===================================")
+            if PCAP_LOOP_WHEN_FILE_COMPLETED:
+                print(f"PCAP_LOOP_WHEN_FILE_COMPLETED enabled -> starting over (count={loop_count}), adding offset to timestamps")
+                loop_count += 1
+                cumulative_time_offset = time.time() - (pcap_start_time or time.time())
+                log_info(f"[receiver-{sensor_id}] PCAP file completed, restarting from beginning (loop {loop_count})")
+                continue
+            else:
+                break  # exit if not looping
+        except Exception as e:
+            log_error(f"[receiver-{sensor_id}] Failed to read PCAP: {e}")
+            break
 
 
 
