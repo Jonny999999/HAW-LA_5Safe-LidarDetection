@@ -13,8 +13,8 @@ import numpy as np
 # Select mode we receive the sensor data
 # "UDP": stream live from UDP (uses UDP_ options)
 # "PCAP": stream from pcap dump file (uses PCAP_ options)
-DATA_RECEIVE_MODE = "PCAP"
-#DATA_RECEIVE_MODE = "UDP"
+#DATA_RECEIVE_MODE = "PCAP"
+DATA_RECEIVE_MODE = "UDP"
 
 
 #=== UDP Stream config ===
@@ -94,8 +94,8 @@ MOTION_DETECTION_ENABLED = True
 # - "merged_dual"         → sensor1 + transformed sensor2 in different colors
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
-VISUALIZER_WINDOW_1_MODE = "merged_dual"
-VISUALIZER_WINDOW_2_MODE = "merged_filtered"
+VISUALIZER_WINDOW_1_MODE = "none"
+VISUALIZER_WINDOW_2_MODE = "none"
 VISUALIZER_WINDOW_3_MODE = "motion_detection"
 
 # logging

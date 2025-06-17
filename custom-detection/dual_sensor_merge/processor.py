@@ -66,7 +66,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         return
 
     # === Update cached pointcloud that is sent to dashboard via TCP ===
-    status_cache.update_status_key("pointcloud_highpass_denoised_seralizednumpyarray", serialize_numpy_array(filtered_frame))
+    status_cache.update_dashboard_key("pointcloud_highpass_denoised_seralizednumpyarray", serialize_numpy_array(filtered_frame))
 
     import open3d as o3d
     import numpy as np
@@ -85,16 +85,23 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
 
     # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
-        clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, min_z_height=0.6, status_cache=status_cache)
+        clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, status_cache=status_cache)
         if visualizer is not None:
             draw_bounding_boxes(clusters, visualizer)
             draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
-        people_inside = track_room_occupancy(clusters, polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, status_cache=status_cache)
+        #people_inside = track_room_occupancy(clusters, polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, status_cache=status_cache)
+            people_inside = track_room_occupancy(
+            clusters,
+            polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON,
+            history_buffer=None,
+            status_cache=status_cache,
+            visualizer=visualizer
+        )
         # === Update cached clusters that is sent to dashboard via TCP ===
         #print(f"Cluster type: {type(clusters[0])}, content: {clusters[0]}")
-        status_cache.update_status_key(
-            "moving_peope_clusters_arrayofserializednumpyarrays",
-            [serialize_numpy_array(cluster[1].points) for cluster in clusters]
+        status_cache.update_dashboard_key(
+            "moving_people_clusters_arrayofserializednumpyarrays",
+            [serialize_numpy_array(cluster[2].points) for cluster in clusters]
         )
 
         ## old people estimation TODO: drop this

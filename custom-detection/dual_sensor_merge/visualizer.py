@@ -288,29 +288,41 @@ def pick_point_from_cloud(points, title="Pick Points"):
 
 
 # ========== VISUALIZATION ==========
-drawn_bounding_boxes = []  # Persistent list of bounding box geometries
-def draw_bounding_boxes(clusters, visualizer, color=(0.0, 0.0, 0.5)):
+def draw_bounding_boxes(clusters, visualizer):
     """
-    Draws bounding boxes around clusters.
+    Draws bounding boxes for tracked clusters using Open3D visualizer.
 
     Args:
-        clusters: list of (centroid, o3d.geometry.PointCloud)
-        visualizer: Open3D visualizer
-        color: RGB tuple
+        clusters (List): List of (cluster_id, centroid, cluster_pcd)
+        visualizer (Visualizer): Open3D visualizer object
     """
-    global drawn_bounding_boxes
+    if visualizer is None:
+        return
 
-    # Clear previous
-    for box in drawn_bounding_boxes:
-        visualizer.remove_geometry(box, reset_bounding_box=False)
-    drawn_bounding_boxes.clear()
+    from open3d import geometry
 
-    # Draw new
-    for _, cluster in clusters:
-        bbox = cluster.get_axis_aligned_bounding_box()
-        bbox.color = color
+    # Initialize static variable if not yet set
+    if not hasattr(draw_bounding_boxes, "last_drawn_boxes"):
+        draw_bounding_boxes.last_drawn_boxes = []
+
+    # Remove previous bounding boxes
+    for box in draw_bounding_boxes.last_drawn_boxes:
+        try:
+            visualizer.remove_geometry(box, reset_bounding_box=False)
+        except Exception as e:
+            log_warn(f"[draw_bounding_boxes] Failed to remove previous box: {e}")
+    draw_bounding_boxes.last_drawn_boxes.clear()
+
+    # Draw new bounding boxes
+    for cluster_id, centroid, cluster_pcd in clusters:
+        bbox = cluster_pcd.get_axis_aligned_bounding_box()
+        bbox.color = (0.0, 0.5, 0.0)  # green
         visualizer.add_geometry(bbox, reset_bounding_box=False)
-        drawn_bounding_boxes.append(bbox)
+        draw_bounding_boxes.last_drawn_boxes.append(bbox)
+
+        # Optional: Draw ID label using 3D text or a sphere as marker
+        # log_debug(f"[draw_bounding_boxes] Drawn cluster ID: {cluster_id}")
+
 
 
 
