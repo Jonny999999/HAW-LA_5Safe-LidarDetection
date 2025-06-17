@@ -94,8 +94,8 @@ MOTION_DETECTION_ENABLED = True
 # - "merged_dual"         → sensor1 + transformed sensor2 in different colors
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
-VISUALIZER_WINDOW_1_MODE = "merged_dual"
-VISUALIZER_WINDOW_2_MODE = "merged_filtered"
+VISUALIZER_WINDOW_1_MODE = "none"
+VISUALIZER_WINDOW_2_MODE = "none"
 VISUALIZER_WINDOW_3_MODE = "motion_detection"
 
 # logging
