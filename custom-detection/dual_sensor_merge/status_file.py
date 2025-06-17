@@ -10,7 +10,6 @@ class GlobalStatusCache:
     Thread- and process-safe global cache for storing runtime status and dashboard data.
     Allows concurrent updates from multiple processes using shared memory (Manager.dict()).
     """
-
     def __init__(self,
                  shared_status_dict=None,
                  shared_dashboard_dict=None,
@@ -19,16 +18,30 @@ class GlobalStatusCache:
                  max_log_entries=5,
                  status_file_enabled=True,
                  status_file_creation_enabled=True):
+        # === Validate external shared memory objects ===
+        if shared_status_dict is None:
+            raise ValueError("shared_status_dict (Manager().dict()) must be provided")
+        if shared_dashboard_dict is None:
+            raise ValueError("shared_dashboard_dict (Manager().dict()) must be provided")
+        if lock is None:
+            raise ValueError("lock (multiprocessing.Lock()) must be provided")
+
+        # === Shared memory references ===
+        self._status_cache = shared_status_dict
+        self._dashboard_cache = shared_dashboard_dict
+        self._lock = lock
+
+        # === Configuration ===
         self.status_file_enabled = status_file_enabled
         self.status_file_path = status_file_path
         self.max_log_entries = max_log_entries
         self.status_file_creation_enabled = status_file_creation_enabled
-
-        # Use externally provided shared memory objects
-        self._status_cache = shared_status_dict or {}
-        self._dashboard_cache = shared_dashboard_dict or {}
-        self._lock = lock or Lock()
         self._first_write_done = False
+
+        # === Debug output for validation ===
+        print(f"[GlobalStatusCache.__init__] Shared status dict id: {id(self._status_cache)}")
+        print(f"[GlobalStatusCache.__init__] Shared dashboard dict id: {id(self._dashboard_cache)}")
+
 
     # === Public API ===
 

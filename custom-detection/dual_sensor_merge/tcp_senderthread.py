@@ -6,6 +6,8 @@ import threading
 import time
 import gzip
 
+from status_file import GlobalStatusCache
+
 HOST = '0.0.0.0'
 PORT = 65432
 
@@ -20,7 +22,7 @@ def handle_client(conn, addr, status_cache):
             # TODO: USE compression for sending
             # TODO: instead of json use pickle to send the dict directly from python to python
             # conn.sendall(pickle.dumps(your_dict))
-            print("[TCP], preparing message for sending...")
+            #print("[TCP], preparing message for sending...")
             msg = status_cache.get_dashboard_and_status_data_as_json()
             msg = f"{msg}\n"
             #print(f"Data received from status_cache: {msg}")
@@ -37,7 +39,18 @@ def handle_client(conn, addr, status_cache):
 
 
 
-def dashboard_tcp_server(status_cache):
+def dashboard_tcp_server(status_cache_class_shared_params):
+
+    status_cache = GlobalStatusCache(
+        shared_status_dict=status_cache_class_shared_params.status_dict,
+        shared_dashboard_dict=status_cache_class_shared_params.dashboard_dict,
+        lock=status_cache_class_shared_params.lock,
+        status_file_path=status_cache_class_shared_params.status_file_path,
+        max_log_entries=status_cache_class_shared_params.max_log_entries,
+        status_file_enabled=status_cache_class_shared_params.status_file_enabled,
+        status_file_creation_enabled=status_cache_class_shared_params.status_file_creation_enabled,
+    )
+    status_cache.update_dashboard_key("example_key", "main process test value")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, PORT))

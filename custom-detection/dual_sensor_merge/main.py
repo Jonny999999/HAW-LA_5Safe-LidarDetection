@@ -10,6 +10,7 @@ import sys
 import queue
 import multiprocessing
 from multiprocessing import Process, Queue, Manager, Lock
+from types import SimpleNamespace
 
 # Imports from custom files
 import config as config # import entire config (use with prefix)
@@ -75,19 +76,33 @@ def main():
     # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
 
-    # class instance to globaly sync output data accross multiple processes and threads (for status.json file and transmission to dashboard via tcp)
     # === Setup shared memory objects ===
     manager = Manager()
-    shared_status_dict = manager.dict()
-    shared_dashboard_dict = manager.dict()
-    shared_lock = Lock()
-
+    # Create a unified shared config object
+    # class has to be initialized in each process, passing the threadsafe variables to the processes
+    # to work on windows
+    status_cache_class_shared_params = SimpleNamespace(
+        status_dict=manager.dict(),
+        dashboard_dict=manager.dict(),
+        lock=manager.Lock(),
+        status_file_path="output/status.json",
+        max_log_entries=5,
+        status_file_enabled=True,
+        status_file_creation_enabled=True
+    )
     # === Create instance for the main process (file writing, dashboard, etc.) ===
     status_cache = GlobalStatusCache(
-        shared_status_dict=shared_status_dict,
-        shared_dashboard_dict=shared_dashboard_dict,
-        lock=shared_lock,
+        shared_status_dict=status_cache_class_shared_params.status_dict,
+        shared_dashboard_dict=status_cache_class_shared_params.dashboard_dict,
+        lock=status_cache_class_shared_params.lock,
+        status_file_path=status_cache_class_shared_params.status_file_path,
+        max_log_entries=status_cache_class_shared_params.max_log_entries,
+        status_file_enabled=status_cache_class_shared_params.status_file_enabled,
+        status_file_creation_enabled=status_cache_class_shared_params.status_file_creation_enabled,
     )
+
+
+
 
     # initialize logging
     utils_init_global_status_cache(status_cache)
@@ -142,14 +157,14 @@ def main():
     # Starts thread to send status file in json format to client that connects to the Server
     # Currently only one Client can connect to the Server
     if config.DASHBOARD_TCP_SERVER_ENABLED:
-        Process(target=dashboard_tcp_server, args=(status_cache,)).start()
+        Process(target=dashboard_tcp_server, args=(status_cache_class_shared_params,)).start()
 
 
     # === Start decoding processes ===
     # Pulls packets from udp_packet_queue, assembles full scans, pushes to decoded_pointcloud_frames_queue
     # using multiprocessing instead of threading to run on actual cpu cores
-    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_1, udp_packet_queue_1, status_cache, 1)).start()
-    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_2, udp_packet_queue_2, status_cache, 2)).start()
+    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_1, udp_packet_queue_1, status_cache_class_shared_params, 1)).start()
+    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_2, udp_packet_queue_2, status_cache_class_shared_params, 2)).start()
 
 
     # === Start process for synchronising the decoded frames ===
@@ -158,7 +173,7 @@ def main():
         decoded_pointcloud_frames_queue_1, # reads from decoded pointclouds queues
         decoded_pointcloud_frames_queue_2,
         synced_frame_queue, # writes synced frame pair in synced_frame queue
-        status_cache
+        status_cache_class_shared_params
     )).start()
 
 
@@ -181,7 +196,6 @@ def main():
     # run motion detection
     # handle play/pause/launch-point-picker
     while True:
-        
         #=== get synced pointcloud from queue ===
         stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() # TODO: add timeout here to stay responsive when no data received?
         stats_processing_start_time = time.time()

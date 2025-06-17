@@ -7,6 +7,7 @@ from utils import log_info, log_warn, log_debug, log_error
 from queue import Full
 
 from shared_types import StampCloudTuple
+from status_file import GlobalStatusCache
 
 from multiprocessing import Queue  # For the Queue class
 from queue import Full, Empty      # For the exceptions
@@ -17,12 +18,21 @@ from queue import Full, Empty      # For the exceptions
 ResultTuple = StampCloudTuple
 decoder = vd.StreamDecoder(get_decoder_config())
 
-def decode_loop(frame_queue, udp_packet_queue, status_cache, sensor_id):
+def decode_loop(frame_queue, udp_packet_queue, status_cache_class_shared_params, sensor_id):
     #log_debug(f"Received {len(data)} bytes from {src_ip}:{src_port} → {UDP_IP}:{UDP_PORT}")
     log_warn(f"Starting decoder loop for sensr {sensor_id}")
     udp_packet_count = 0
     current_stamp = None  # Track last packets timestamp in the frame
     stats_last_frame_decoded_time = time.time()
+    status_cache = GlobalStatusCache(
+        shared_status_dict=status_cache_class_shared_params.status_dict,
+        shared_dashboard_dict=status_cache_class_shared_params.dashboard_dict,
+        lock=status_cache_class_shared_params.lock,
+        status_file_path=status_cache_class_shared_params.status_file_path,
+        max_log_entries=status_cache_class_shared_params.max_log_entries,
+        status_file_enabled=status_cache_class_shared_params.status_file_enabled,
+        status_file_creation_enabled=status_cache_class_shared_params.status_file_creation_enabled,
+    )
 
     while True:
         # get timestamp packet received + packet from receiver queue
@@ -90,7 +100,7 @@ def decode_loop(frame_queue, udp_packet_queue, status_cache, sensor_id):
 
 
 
-def frame_synchronizer(queue_1, queue_2, synced_queue, status_cache, tolerance=0.1, max_buffer_size=500):
+def frame_synchronizer(queue_1, queue_2, synced_queue, status_cache_class_shared_params, tolerance=0.1, max_buffer_size=500):
     """
     Synchronizes frames from two sources by timestamp.
     Uses a small buffer and finds best match instead of aggressively discarding.
@@ -100,6 +110,16 @@ def frame_synchronizer(queue_1, queue_2, synced_queue, status_cache, tolerance=0
     failed_match_counter = 0
     max_failed_match_warn = 5 # max failed sync attempts in a row for warning to be printed (tolerance too tight)
     stats_last_frame_synced = time.time()
+
+    status_cache = GlobalStatusCache(
+        shared_status_dict=status_cache_class_shared_params.status_dict,
+        shared_dashboard_dict=status_cache_class_shared_params.dashboard_dict,
+        lock=status_cache_class_shared_params.lock,
+        status_file_path=status_cache_class_shared_params.status_file_path,
+        max_log_entries=status_cache_class_shared_params.max_log_entries,
+        status_file_enabled=status_cache_class_shared_params.status_file_enabled,
+        status_file_creation_enabled=status_cache_class_shared_params.status_file_creation_enabled,
+    )
 
     def get_from_queue(q, buffer):
         """Blocking get with timeout, returns True if new item added"""
