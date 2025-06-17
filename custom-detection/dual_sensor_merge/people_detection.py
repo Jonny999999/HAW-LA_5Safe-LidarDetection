@@ -112,7 +112,7 @@ def detect_moving_clusters(
     min_volume_m3=0.7,
     min_frames_to_confirm=5,
     status_cache=None,
-    retain_frames=20,  # frames the cluster stays tracked even though it's no longer detected
+    retain_frames=20,
     match_threshold=1.0
 ):
     """
@@ -139,12 +139,10 @@ def detect_moving_clusters(
     import numpy as np
     import open3d as o3d
 
-    # Initialize persistent state (only once)
     if not hasattr(detect_moving_clusters, "last_clusters"):
-        detect_moving_clusters.last_clusters = {}  # {id: cluster_info}
+        detect_moving_clusters.last_clusters = {}
         detect_moving_clusters.cluster_id_counter = 0
 
-    # Exit early if invalid input
     if pointcloud_np.shape[0] > max_points:
         log_warn(f"[detect clusters] Too many points ({pointcloud_np.shape[0]}), skipping detection.")
         return []
@@ -152,7 +150,6 @@ def detect_moving_clusters(
         log_info("[detect clusters] No points provided.")
         return []
 
-    # Cluster using DBSCAN
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pointcloud_np)
     labels = np.array(pcd.cluster_dbscan(eps=distance_threshold, min_points=min_points, print_progress=False))
@@ -161,13 +158,11 @@ def detect_moving_clusters(
         log_info("[detect clusters] No clusters found.")
         return []
 
-    # Extract new clusters (centroids, point cloud, volume only)
     unique_labels = np.unique(labels)
     new_clusters = []
     for label in unique_labels:
         if label == -1:
-            continue  # Skip noise
-
+            continue
         indices = np.where(labels == label)[0]
         cluster = pcd.select_by_index(indices)
         centroid = np.mean(np.asarray(cluster.points), axis=0)
@@ -188,7 +183,6 @@ def detect_moving_clusters(
     new_id_count = 0
     reused_id_count = 0
 
-    # Match current clusters with tracked ones using centroid distance
     for cluster in new_clusters:
         curr_centroid = np.array(cluster["centroid"])
         best_id = None
@@ -197,7 +191,6 @@ def detect_moving_clusters(
         for prev_id, prev_data in detect_moving_clusters.last_clusters.items():
             if prev_id in used_prev_ids:
                 continue
-
             prev_centroid = np.array(prev_data["centroid"])
             dist = np.linalg.norm(curr_centroid - prev_centroid)
             if dist < match_threshold and dist < best_dist:
@@ -205,13 +198,11 @@ def detect_moving_clusters(
                 best_id = prev_id
 
         if best_id is not None:
-            # Match found → update state
             reused_id_count += 1
             used_prev_ids.add(best_id)
             prev_data = detect_moving_clusters.last_clusters[best_id]
             frames_observed = prev_data.get("frames_observed", 0) + 1
 
-            # Apply filters only during initial confirmation phase
             if frames_observed < min_frames_to_confirm:
                 passes_volume = cluster["volume"] >= min_volume_m3
                 passes_height = cluster["z_range"] >= min_z_height
@@ -231,10 +222,12 @@ def detect_moving_clusters(
                 "z_range": cluster["z_range"]
             }
 
-            if confirmed:
+            if confirmed and not prev_data.get("confirmed", False):
+                results.append((best_id, curr_centroid, cluster["pcd"]))
+                log_warn(f"[detect clusters] Cluster CONFIRMED id={best_id} (total={len(results)})")
+            elif confirmed:
                 results.append((best_id, curr_centroid, cluster["pcd"]))
         else:
-            # New cluster → assign new ID and start tracking
             new_id = detect_moving_clusters.cluster_id_counter
             detect_moving_clusters.cluster_id_counter += 1
             new_id_count += 1
@@ -248,7 +241,6 @@ def detect_moving_clusters(
                 "z_range": cluster["z_range"]
             }
 
-    # Retain unmatched clusters
     expired_ids = []
     for prev_id, prev_data in detect_moving_clusters.last_clusters.items():
         if prev_id not in used_prev_ids:
@@ -259,21 +251,17 @@ def detect_moving_clusters(
                     results.append((prev_id, prev_data["centroid"], prev_data["pcd"]))
             else:
                 expired_ids.append(prev_id)
+                log_warn(f"[detect clusters] Cluster DROPPED id={prev_id} (total={len(results)})")
 
     detect_moving_clusters.last_clusters = updated_cluster_state
 
-    # Final stats + dashboard update
     retained_count = len(results) - reused_id_count
-    log_warn(f"[detect clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {retained_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
+    log_info(f"[detect clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {retained_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
 
     if status_cache:
-        status_cache.update_dashboard_key("DETECTION_MOVING_PEOPLE_INSIDE", f"{len(results)}")
+        status_cache.update_dashboard_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{len(results)}")
 
     return results
-
-
-
-
 
 
 
@@ -303,10 +291,11 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
     ENTRY_EXIT_HYSTERESIS_METERS = 0.3
     global people_inside_incremented
 
-    # Create a persistent buffer if none provided
-    if history_buffer is None:
+    # Init persistent buffer using function attribute
+    if not hasattr(track_room_occupancy, "history_buffer"):
         from collections import deque
-        history_buffer = deque(maxlen=5)
+        track_room_occupancy.history_buffer = deque(maxlen=5)
+    history_buffer = track_room_occupancy.history_buffer
 
     # Convert outer polygon to shapely format
     outer_poly = Polygon(polygon_xy_inside_area)
@@ -327,28 +316,30 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
         if inner_poly != outer_poly:
             draw_2d_polygon(list(inner_poly.exterior.coords), visualizer, color=(0.2, 0.8, 0.2))  # green
 
-    # Extract only centroids for tracking
-    current_centroids = [centroid for (_, centroid, _) in clusters]
-    history_buffer.append(current_centroids)
+    # Sort cluster tuples into dictionary by ID
+    cluster_dict = {cid: centroid for (cid, centroid, _) in clusters}
+    log_debug(f"[track_room_occupancy] Current cluster IDs: {list(cluster_dict.keys())}")
 
-    # Truncate buffer if needed
-    if len(history_buffer) > 5:
-        history_buffer.popleft()
+    # Append this frame's centroids to history buffer (as dict of cid → position)
+    history_buffer.append(cluster_dict)
 
-    # Init persistent sets for tracking entered/exited cluster indices
+    if len(history_buffer) < 2:
+        log_warn("[track_room_occupancy] Not enough frames in history yet")
+        return max(people_inside_incremented, 0)
+
+    # Init persistent sets for tracking entered/exited cluster IDs
     if not hasattr(track_room_occupancy, "entered_ids"):
         track_room_occupancy.entered_ids = set()
         track_room_occupancy.exited_ids = set()
 
-    tracked_paths = list(zip(*history_buffer)) if history_buffer else []
-    people_inside = 0
+    # Match tracked IDs over time (only process IDs present in both first and last frame)
+    ids_in_both = set(history_buffer[0].keys()).intersection(history_buffer[-1].keys())
 
-    for idx, path in enumerate(tracked_paths):
-        if len(path) < 2:
-            continue  # not enough history to detect movement
+    log_debug(f"[track_room_occupancy] IDs present in both first and last frame: {list(ids_in_both)}")
 
-        start = path[0][:2]
-        end = path[-1][:2]
+    for cid in ids_in_both:
+        start = history_buffer[0][cid][:2]  # (x,y) in first frame
+        end = history_buffer[-1][cid][:2]   # (x,y) in current frame
 
         was_inside_outer = outer_poly.contains(Point(start))
         was_inside_inner = inner_poly.contains(Point(start))
@@ -358,44 +349,41 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
         movement_vector = np.array(end) - np.array(start)
         moved_distance = np.linalg.norm(movement_vector)
 
-        # Skip noise/static detections
-        if moved_distance < 0.05:
-            continue
+        log_debug(f"[track_room_occupancy] Cluster {cid} moved {moved_distance:.2f} m: {start} → {end}")
+        log_debug(f"[track_room_occupancy] was_inside_outer={was_inside_outer}, was_inside_inner={was_inside_inner}, is_inside_outer={is_inside_outer}, is_inside_inner={is_inside_inner}")
 
-        # Entry: went from outside outer → inside inner, and not counted before
-        if not was_inside_outer and is_inside_inner and idx not in track_room_occupancy.entered_ids:
+        if moved_distance < 0.05:
+            log_info(f"[track_room_occupancy] Cluster {cid} skipped due to low movement")
+            continue  # noise or static
+
+        # Entry: outside → inside
+        if not was_inside_outer and is_inside_inner and cid not in track_room_occupancy.entered_ids:
+            log_warn(f"[track_room_occupancy] Cluster {cid} ENTERED")
             sys.stdout.write('\a')
             sys.stdout.flush()
-            log_warn("[track_room_occupancy] Person ENTERED room")
-            status_cache.add_log_entry("DETECTION_LAST_EVENTS", "Person ENTERED", trigger_file_update=False)
-            track_room_occupancy.entered_ids.add(idx)
-            track_room_occupancy.exited_ids.discard(idx)
-            people_inside += 1
+            if status_cache:
+                status_cache.add_log_entry("DETECTION_LAST_EVENTS", f"Cluster {cid} ENTERED", trigger_file_update=False)
+            track_room_occupancy.entered_ids.add(cid)
+            track_room_occupancy.exited_ids.discard(cid)
             people_inside_incremented += 1
 
-        # Exit: went from inside inner → outside outer, and not counted before
-        elif was_inside_inner and not is_inside_outer and idx not in track_room_occupancy.exited_ids:
-            log_warn("[track_room_occupancy] Person LEFT room")
-            status_cache.add_log_entry("DETECTION_LAST_EVENTS", "Person LEFT", trigger_file_update=False)
-            track_room_occupancy.exited_ids.add(idx)
-            track_room_occupancy.entered_ids.discard(idx)
-            people_inside -= 1
+        # Exit: inside → outside
+        elif was_inside_inner and not is_inside_outer and cid not in track_room_occupancy.exited_ids:
+            log_warn(f"[track_room_occupancy] Cluster {cid} LEFT")
+            if status_cache:
+                status_cache.add_log_entry("DETECTION_LAST_EVENTS", f"Cluster {cid} LEFT", trigger_file_update=False)
+            track_room_occupancy.exited_ids.add(cid)
+            track_room_occupancy.entered_ids.discard(cid)
             people_inside_incremented -= 1
 
-        # Still inside: count towards total
-        elif is_inside_inner:
-            people_inside += 1
-
-        # Safety clamp
+        # Clamp to non-negative
         if people_inside_incremented < 0:
-            log_error("[track_room_occupancy] decremented people_inside below 0 → clamping to 0")
+            log_error("[track_room_occupancy] people_inside went negative — clamping to 0")
             people_inside_incremented = 0
 
-    # Final status update
-    log_debug(f"[track_room_occupancy] ABS-MOVING-PEOPLE-INSIDE: {max(people_inside, 0)}, INCREMENTED-LEFT-ENTERED-PEOPLE: {people_inside_incremented}")
+    log_debug(f"[track_room_occupancy] People inside (tracked): {people_inside_incremented}")
+
     if status_cache:
-        status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", str(people_inside_incremented))
+        status_cache.update_status_key("DETECTION_COUNTED_PEOPLE_INSIDE", str(people_inside_incremented))
 
-    return max(people_inside, 0)
-
-
+    return people_inside_incremented
