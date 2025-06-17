@@ -224,7 +224,7 @@ def main():
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
         # === Update cached pointcloud that is sent to dashboard via TCP ===
-        status_cache.update_dashboard_key("pointcloud_merged_filtered_seralizednumpyarray", serialize_numpy_array(pointcloud_merged_filtered_array))
+        status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
 
         # === Update visualizer windows ===
         # Define context with all needed arrays for visualization functions

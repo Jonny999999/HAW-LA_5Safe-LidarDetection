@@ -12,30 +12,33 @@ HOST = '0.0.0.0'
 PORT = 65432
 
 
-SEND_DATA_DELAY_MS = 500
+DATA_SEND_INTERVAL_MS = 500
+
+
+import pickle
+import struct
 
 def handle_client(conn, addr, status_cache):
     global DATA_SEND_INTERVAL_MS
     print(f"Empfänger verbunden: {addr}")
     try:
         while True:
-            # TODO: USE compression for sending
-            # TODO: instead of json use pickle to send the dict directly from python to python
-            # conn.sendall(pickle.dumps(your_dict))
-            #print("[TCP], preparing message for sending...")
-            msg = status_cache.get_dashboard_and_status_data_as_json()
-            msg = f"{msg}\n"
-            #print(f"Data received from status_cache: {msg}")
-            print("[TCP], sending...")
-            conn.sendall(msg.encode())
-            #conn.sendall(gzip.compress(msg.encode()))
-            print("[TCP], done sending")
-            time.sleep(SEND_DATA_DELAY_MS/1000)
+            # Get raw status and dashboard data as Python objects
+            data = status_cache.get_dashboard_and_status_data()
+
+            # Serialize the object with pickle
+            msg = pickle.dumps(data)
+            length = struct.pack('!I', len(msg))  # 4 bytes, network byte order
+
+            # Optionally: add newline or framing logic if needed
+            conn.sendall(length + msg)
+            print("[TCP] Pickle data sent.")
+
+            time.sleep(DATA_SEND_INTERVAL_MS / 1000)
     except Exception as e:
         print(f"Verbindung zu {addr} verloren: {e}")
     finally:
         conn.close()
-
 
 
 

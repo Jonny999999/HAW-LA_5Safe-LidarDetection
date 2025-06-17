@@ -103,6 +103,20 @@ class GlobalStatusCache:
                 "dashboard": dict(self._dashboard_cache)
             })
 
+    def get_dashboard_and_status_data(self):
+        """
+        Returns the raw status and dashboard dictionaries.
+        Can be pickled directly for transmission.
+        """
+        if not self.status_file_enabled:
+            return {"status": {}, "dashboard": {}}
+        with self._lock:
+            return {
+                "status": dict(self._status_cache),
+                "dashboard": dict(self._dashboard_cache)
+            }
+
+
     def flush(self):
         if not self.status_file_enabled:
             return

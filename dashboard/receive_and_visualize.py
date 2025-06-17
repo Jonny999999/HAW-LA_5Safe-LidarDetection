@@ -1,96 +1,77 @@
-import open3d as o3d
-import numpy as np
 import socket
-import json
+import pickle
+import struct
 import time
 import pprint
+import numpy as np
 
-# Konfiguration
-HOST = 'localhost'   # IP-Adresse des Senders
+# Configuration
+HOST = 'localhost'
 PORT = 65432
 
-# Open3D-Setup
-pcd = o3d.geometry.PointCloud()
-pcd.points = o3d.utility.Vector3dVector(np.zeros((1, 3)))
-
-vis = o3d.visualization.Visualizer()
-vis.create_window(window_name="Empfänger: Punktwolke + Personenanzahl")
-vis.add_geometry(pcd)
-vis.get_render_option().point_size = 3.0
-
-
-
-def deserialize_numpy_array(obj):
-    return np.array(obj["data"], dtype=obj["dtype"]).reshape(obj["shape"])
-
-# Example:
-# raw = '{"pointcloud_merged_filtered": {"data": [...], "shape": [...], "dtype": "float32"}}'
-
-
-def clip_large_lists(obj, max_items=20):
-    if isinstance(obj, list):
+def clip_large_content(obj, max_items=10):
+    return obj
+    if isinstance(obj, np.ndarray):
+        return f"<np.ndarray shape={obj.shape} dtype={obj.dtype}>"
+    elif isinstance(obj, list):
         if len(obj) > max_items:
             return obj[:max_items] + ["..."]
         else:
-            return [clip_large_lists(i, max_items) for i in obj]
+            return [clip_large_content(i, max_items) for i in obj]
     elif isinstance(obj, dict):
-        return {k: clip_large_lists(v, max_items) for k, v in obj.items()}
+        return {k: clip_large_content(v, max_items) for k, v in obj.items()}
     else:
         return obj
 
+def recv_full_message(sock, buffer):
+    try:
+        # Wait for 4-byte header (message length)
+        while len(buffer) < 4:
+            buffer += sock.recv(4096)
+        msg_len = struct.unpack('!I', buffer[:4])[0]
+        buffer = buffer[4:]
 
-# === Verbindung aufbauen mit Retry ===
+        # Wait for full payload
+        while len(buffer) < msg_len:
+            buffer += sock.recv(4096)
+        msg_data = buffer[:msg_len]
+        buffer = buffer[msg_len:]
+
+        # Try to deserialize
+        obj = pickle.loads(msg_data)
+        return obj, buffer
+
+    except (pickle.UnpicklingError, struct.error, ValueError, EOFError) as e:
+        print(f"[Receiver] Unpickle failed or corrupt data: {e}")
+        # Drop entire buffer and continue listening
+        return None, b""
+
+# Establish TCP connection with retry
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 connected = False
 while not connected:
     try:
-        print(f"[Empfänger] Verbinde mit {HOST}:{PORT} ...")
+        print(f"[Receiver] Connecting to {HOST}:{PORT} ...")
         sock.connect((HOST, PORT))
         connected = True
-        print("[Empfänger] Verbindung erfolgreich hergestellt.")
+        print("[Receiver] Connected successfully.")
     except ConnectionRefusedError:
-        print("[Empfänger] Verbindung fehlgeschlagen. Neuer Versuch in 1 Sekunde...")
+        print("[Receiver] Connection refused. Retrying in 1 second...")
         time.sleep(1)
 
-sock.setblocking(False)  # Nicht blockierend für vis-Loop
+sock.setblocking(False)
 
-# Zustand
-buffer = ""
-people_count = 0
-points = np.zeros((1, 3))
-
-# Hauptloop: Pollt Socket & updated Open3D
+# Main loop
+data_buffer = b""
 while True:
-    # Versuch, Daten vom Socket zu lesen
     try:
-        data = sock.recv(8192)
-        if data:
-            buffer += data.decode()
+        obj, data_buffer = recv_full_message(sock, data_buffer)
+        if obj is not None:
+            print("\n\n========= Received Pickled Object =========")
+            pprint.pprint(clip_large_content(obj), compact=True, width=120, depth=5)
 
-            # Verarbeitung von Zeilen (eine Zeile = eine JSON-Nachricht)
-            while '\n' in buffer:
-                line, buffer = buffer.split('\n', 1)
-                try:
-                    obj = json.loads(line)
-                    #moving_people = obj.get("DETECTION_MOVING_PEOPLE_INSIDE")
-                    print("\n\n=======================")
-                    print("==== Received dict: ====")
-                    print("========================")
-                    pprint.pprint(clip_large_lists(obj, max_items=20), depth=10, width=150, compact=True)
-                    # print(moving_people)
-                    # vis.update_geometry(pcd)
-
-                    # de-serialize pointcloud from json to numpy array
-                    pointcloud_data = obj["dashboard"]["pointcloud_merged_filtered_serializednumpyarray"]
-                    pointcloud_merged_filtered_numpyarray = deserialize_numpy_array(pointcloud_data)
-
-                except json.JSONDecodeError:
-                    print("[Empfänger] Ungültige JSON-Zeile.")
     except BlockingIOError:
-        pass  # Kein neues Datenpaket da – weitermachen
+        pass  # No data yet
     except Exception as e:
-        print(f"[Empfänger] Fehler: {e}")
-        #break
-
-    vis.poll_events()
-    vis.update_renderer()
+        print(f"[Receiver] Unexpected error: {e}")
+        break

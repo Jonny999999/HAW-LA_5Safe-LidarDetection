@@ -66,7 +66,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         return
 
     # === Update cached pointcloud that is sent to dashboard via TCP ===
-    status_cache.update_dashboard_key("pointcloud_highpass_denoised_seralizednumpyarray", serialize_numpy_array(filtered_frame))
+    status_cache.update_dashboard_key("pointcloud_highpass_denoised_numpyarray", filtered_frame)
 
     import open3d as o3d
     import numpy as np
