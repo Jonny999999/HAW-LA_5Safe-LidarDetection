@@ -66,7 +66,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         return
 
     # === Update cached pointcloud that is sent to dashboard via TCP ===
-    status_cache.update_status_key("pointcloud_highpass_denoised_seralizednumpyarray", serialize_numpy_array(filtered_frame))
+    status_cache.update_dashboard_key("pointcloud_highpass_denoised_seralizednumpyarray", serialize_numpy_array(filtered_frame))
 
     import open3d as o3d
     import numpy as np
@@ -99,8 +99,8 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         )
         # === Update cached clusters that is sent to dashboard via TCP ===
         #print(f"Cluster type: {type(clusters[0])}, content: {clusters[0]}")
-        status_cache.update_status_key(
-            "moving_peope_clusters_arrayofserializednumpyarrays",
+        status_cache.update_dashboard_key(
+            "moving_people_clusters_arrayofserializednumpyarrays",
             [serialize_numpy_array(cluster[2].points) for cluster in clusters]
         )
 

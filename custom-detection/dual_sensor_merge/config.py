@@ -13,8 +13,8 @@ import numpy as np
 # Select mode we receive the sensor data
 # "UDP": stream live from UDP (uses UDP_ options)
 # "PCAP": stream from pcap dump file (uses PCAP_ options)
-DATA_RECEIVE_MODE = "PCAP"
-#DATA_RECEIVE_MODE = "UDP"
+#DATA_RECEIVE_MODE = "PCAP"
+DATA_RECEIVE_MODE = "UDP"
 
 
 #=== UDP Stream config ===

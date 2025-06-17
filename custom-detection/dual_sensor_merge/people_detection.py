@@ -105,14 +105,14 @@ drawn_bounding_boxes = []
 # ========== CLUSTER DETECTION ==========
 def detect_moving_clusters(
     pointcloud_np,
-    distance_threshold=0.5,
+    distance_threshold=0.2,
     min_points=30,
     max_points=5000,
     min_z_height=0.8,
-    min_volume_m3=0.7,
+    min_volume_m3=0,
     min_frames_to_confirm=5,
     status_cache=None,
-    retain_frames=20,
+    retain_frames=40,
     match_threshold=1.0
 ):
     """
@@ -259,7 +259,7 @@ def detect_moving_clusters(
     log_info(f"[detect clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {retained_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
 
     if status_cache:
-        status_cache.update_dashboard_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{len(results)}")
+        status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{len(results)}")
 
     return results
 
