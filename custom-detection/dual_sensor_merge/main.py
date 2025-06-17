@@ -9,7 +9,7 @@ import laspy
 import sys
 import queue
 import multiprocessing
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Manager, Lock
 
 # Imports from custom files
 import config as config # import entire config (use with prefix)
@@ -76,7 +76,18 @@ def main():
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
 
     # class instance to globaly sync output data accross multiple processes and threads (for status.json file and transmission to dashboard via tcp)
-    status_cache = GlobalStatusCache(status_file_path=config.STATUS_FILE_PATH, status_file_creation_enabled=config.STATUS_FILE_ENABLED)
+    # === Setup shared memory objects ===
+    manager = Manager()
+    shared_status_dict = manager.dict()
+    shared_dashboard_dict = manager.dict()
+    shared_lock = Lock()
+
+    # === Create instance for the main process (file writing, dashboard, etc.) ===
+    status_cache = GlobalStatusCache(
+        shared_status_dict=shared_status_dict,
+        shared_dashboard_dict=shared_dashboard_dict,
+        lock=shared_lock,
+    )
 
     # initialize logging
     utils_init_global_status_cache(status_cache)

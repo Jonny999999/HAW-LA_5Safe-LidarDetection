@@ -11,16 +11,23 @@ class GlobalStatusCache:
     Allows concurrent updates from multiple processes using shared memory (Manager.dict()).
     """
 
-    def __init__(self, status_file_path="output/status.json", max_log_entries=5, status_file_enabled=True, status_file_creation_enabled=True):
+    def __init__(self,
+                 shared_status_dict=None,
+                 shared_dashboard_dict=None,
+                 lock=None,
+                 status_file_path="output/status.json",
+                 max_log_entries=5,
+                 status_file_enabled=True,
+                 status_file_creation_enabled=True):
         self.status_file_enabled = status_file_enabled
         self.status_file_path = status_file_path
         self.max_log_entries = max_log_entries
         self.status_file_creation_enabled = status_file_creation_enabled
 
-        self._manager = Manager()
-        self._status_cache = self._manager.dict()
-        self._dashboard_cache = self._manager.dict()
-        self._lock = Lock()
+        # Use externally provided shared memory objects
+        self._status_cache = shared_status_dict or {}
+        self._dashboard_cache = shared_dashboard_dict or {}
+        self._lock = lock or Lock()
         self._first_write_done = False
 
     # === Public API ===
