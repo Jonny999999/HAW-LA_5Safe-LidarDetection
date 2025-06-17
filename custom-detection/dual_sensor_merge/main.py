@@ -109,6 +109,7 @@ def main():
         packet_queue =   udp_packet_queue_1,
         sensor_id =      1,
         pcap_path =      config.PCAP_FILE_1,
+        pcap_playback_delay_ms = getattr(config, "PCAP_FILE_1_PLAYBACK_DELAY_MS", 0),
         udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR1,
         udp_port =       config.UDP_PORT_SENSOR1,
         filtered_udp_port= config.PCAP_FILE_FILTER_UDP_PORT_SENSOR_1
@@ -119,6 +120,7 @@ def main():
         packet_queue =   udp_packet_queue_2,
         sensor_id =      2,
         pcap_path =      config.PCAP_FILE_2,
+        pcap_playback_delay_ms = getattr(config, "PCAP_FILE_2_PLAYBACK_DELAY_MS", 0),
         udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR2,
         udp_port =       config.UDP_PORT_SENSOR2,
         filtered_udp_port= config.PCAP_FILE_FILTER_UDP_PORT_SENSOR_2

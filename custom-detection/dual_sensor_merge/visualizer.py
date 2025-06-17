@@ -71,7 +71,7 @@ def update_visualizer_by_mode(mode, context):
     """
     vis = get_visualizer_by_mode(mode)
     if mode == "none" or vis is None:
-        print("[update_visuzlier_by_mode] no vis assigned to this mode")
+        log_debug("[update_visuzlier_by_mode] no vis assigned to this mode")
         return
 
     if mode == "sensor1":

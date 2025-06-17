@@ -39,6 +39,9 @@ UDP_PORT_SENSOR2 = 5004
 
 PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
 PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
+# manually correct delay between recording start of each file
+PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
+PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
 #PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
 #PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
@@ -50,6 +53,7 @@ PCAP_FILE_REALTIME_PLAYBACK = True
 
 # When PCAP file is finished (all lines replayed) start over from beginning (adds offset to timestamp as if its new data)
 PCAP_LOOP_WHEN_FILE_COMPLETED = True
+# Note: its known to break the sync between 2 files (since wireshark recordings usually start and end slightly different...)
 
 # Custom fixed delay between reading frames from file (useful when not playing back in realtime + goal is to speed up / slow down replay)
 #PCAP_FILE_PACKET_DELAY = 0.0001

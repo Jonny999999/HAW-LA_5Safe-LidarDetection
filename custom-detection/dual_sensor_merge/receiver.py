@@ -39,7 +39,17 @@ def _udp_listener(udp_ip_addr, udp_port, packet_queue, sensor_id):
 
 
 ## --- PCAP reading mode ---
-def _pcap_stream_reader(pcap_path, packet_queue, sensor_id, filtered_udp_port=None):
+def _pcap_stream_reader(pcap_path, packet_queue, sensor_id, filtered_udp_port=None, playback_delay_ms=0):
+    """
+    Streams UDP packets from a PCAP file in real-time.
+    
+    Parameters:
+    - pcap_path: path to .pcap or .pcap.gz file
+    - packet_queue: multiprocessing queue to send extracted packets
+    - sensor_id: identifier for logging
+    - filtered_udp_port: only forward packets with this UDP destination port
+    - initial_playback_offset: delay (in seconds) before streaming starts (applied once)
+    """
     NO_MATCH_WARNING_THRESHOLD = 500
     MAX_PACKET_DELAY_MS = 1
     no_match_counter = 0
@@ -67,7 +77,7 @@ def _pcap_stream_reader(pcap_path, packet_queue, sensor_id, filtered_udp_port=No
                                 ts = pkt_metadata.sec + pkt_metadata.usec / 1e6
                                 if pcap_start_time is None:
                                     pcap_start_time = ts
-                                adjusted_ts = ts - pcap_start_time + cumulative_time_offset
+                                adjusted_ts = ts - pcap_start_time + cumulative_time_offset + playback_delay_ms/1000
 
                                 # Wall-clock replay delay
                                 if PCAP_FILE_REALTIME_PLAYBACK:
@@ -116,7 +126,7 @@ def _pcap_stream_reader(pcap_path, packet_queue, sensor_id, filtered_udp_port=No
 
 
 
-def start_receiver_thread(mode, packet_queue, sensor_id, *, pcap_path=None, udp_listen_ip=None, udp_port=None, filtered_udp_port=None):
+def start_receiver_thread(mode, packet_queue, sensor_id, *, pcap_path=None, pcap_playback_delay_ms, udp_listen_ip=None, udp_port=None, filtered_udp_port=None):
     """
     Starts a receiver thread based on the selected mode (PCAP or UDP).
 
@@ -133,7 +143,7 @@ def start_receiver_thread(mode, packet_queue, sensor_id, *, pcap_path=None, udp_
     if mode == "PCAP":
         p = Process(
             target=_pcap_stream_reader,
-            args=(pcap_path, packet_queue, sensor_id, filtered_udp_port),
+            args=(pcap_path, packet_queue, sensor_id, filtered_udp_port, pcap_playback_delay_ms),
             daemon=True
         )
     elif mode == "UDP":
