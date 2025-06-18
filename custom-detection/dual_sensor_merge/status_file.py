@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime
 from multiprocessing import Manager, Lock
-
+import config
 
 class GlobalStatusCache:
     """
@@ -37,6 +37,10 @@ class GlobalStatusCache:
         self.max_log_entries = max_log_entries
         self.status_file_creation_enabled = status_file_creation_enabled
         self._first_write_done = False
+
+        self.filtered_keys_to_skip = config.STATUS_FILE_KEYS_NOT_ADDED_TO_FILE or []
+        self.status_filter_enabled = True
+
 
         # === Debug output for validation ===
         print(f"[GlobalStatusCache.__init__] Shared status dict id: {id(self._status_cache)}")
@@ -154,7 +158,17 @@ class GlobalStatusCache:
                         return (2, k)
                     else:
                         return (1, k)
-                sorted_dict = {k: self._status_cache[k] for k in sorted(self._status_cache.keys(), key=sort_key)}
+
+                # Apply optional filtering before writing
+                if self.status_filter_enabled:
+                    filtered = {
+                        k: v for k, v in self._status_cache.items()
+                        if k not in self.filtered_keys_to_skip
+                    }
+                else:
+                    filtered = dict(self._status_cache)
+
+                sorted_dict = {k: filtered[k] for k in sorted(filtered.keys(), key=sort_key)}
                 with open(self.status_file_path, "w") as f:
                     json.dump(sorted_dict, f, indent=2)
             except Exception as e:

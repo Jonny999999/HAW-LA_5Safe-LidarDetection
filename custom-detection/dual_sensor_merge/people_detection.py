@@ -260,6 +260,8 @@ def detect_moving_clusters(
 
     if status_cache:
         status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{len(results)}")
+        moving_now = reused_id_count + new_id_count
+        status_cache.update_status_key("DETECTION_MOVING_PEOPLE", f"{moving_now}")
 
     return results
 

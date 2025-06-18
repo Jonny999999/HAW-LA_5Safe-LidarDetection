@@ -80,8 +80,10 @@ FILE_EXPORT_ENABLE = True
 # create output/status.json regularly updated with latest values e.g. detected people, framerates, processing duration...
 STATUS_FILE_ENABLED = True 
 STATUS_FILE_PATH = "output/status.json"
+# Ignore some keys to simplyfy the output on demand:
+STATUS_FILE_KEYS_NOT_ADDED_TO_FILE = ["LOG_LAST_ERRORS", "TIMING_FRAMERATE_DECODER_1", "TIMING_FRAMERATE_DECODER_2", "TIMING_PROCESSING_DURATION_MS", "LOG_LAST_WARNINGS" ]
 
-DASHBOARD_TCP_SERVER_ENABLED = True
+DASHBOARD_TCP_SERVER_ENABLED = False
 
 # enable motion+people detection and tracking
 MOTION_DETECTION_ENABLED = True

@@ -2,6 +2,8 @@ import numpy as np
 import open3d as o3d
 import numpy as np
 from scipy.spatial import cKDTree
+import time
+import json
 
 from utils import log_info, log_warn, log_debug
 import config
@@ -10,12 +12,145 @@ import config
 visualizer_instances = {}
 visualizer_modes = {}
 
+#########################
+######## CONFIG #########
+#########################
+VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
+VISUALIZER_DEFAULT_WINDOW_HEIGHT = 2160
+VISUALIZER_DEFAULT_CAMERA_POSITION = {
+  "intrinsic": {
+    "width": 1914,
+    "height": 1137,
+    "fx": 984.6708841029068,
+    "fy": 984.6708841029068,
+    "cx": 956.5,
+    "cy": 568.0
+  },
+  "extrinsic": [
+    [
+      -0.6730622953428582,
+      -0.7351171121348872,
+      0.08117867967802239,
+      -0.8071571641729453
+    ],
+    [
+      -0.6322851327318026,
+      0.5149955914727914,
+      -0.5787875704348846,
+      3.20865146732323
+    ],
+    [
+      0.38366998516189654,
+      -0.44088816292803046,
+      -0.8114277357077564,
+      4.39508800354559
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ]
+} 
 
-def initialize_visualizer(title="LiDAR Viewer", width=1280, height=720):
+
+def initialize_visualizer(
+    title="LiDAR Viewer", 
+    width=VISUALIZER_DEFAULT_WINDOW_WIDTH, 
+    height=VISUALIZER_DEFAULT_WINDOW_HEIGHT):
     log_info(f"Initializing visualizer: {title}")
     visualizer = o3d.visualization.Visualizer()
     visualizer.create_window(window_name=title, width=width, height=height)
+
+    # Draw polygon 
+    # (temporary, we need any object present to be able to adjust the camera..)
+    if config.PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON:
+        draw_2d_polygon(config.PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, fit_camera_to_data=True)
+
+    # Let Open3D render one frame (so internal bounding box is set)
+    visualizer.poll_events()
+    visualizer.update_renderer()
+
+    # apply configured camera position
+    apply_camera_parameters(visualizer, VISUALIZER_DEFAULT_CAMERA_POSITION)
+
+    # === uncomment this to create/get the camera position for VISUALIZER_DEFAULT_CAMERA_POSITION ===
+    # pause and manually select the camera position to update the configuration
+    #time.sleep(1)
+    #adjust_and_dump_camera(visualizer)
+
+    # Clear polygon again
+    visualizer.clear_geometries()
+    time.sleep(2)
+
     return visualizer
+
+
+
+
+
+def apply_camera_parameters(visualizer, cam_data):
+    """
+    Applies previously saved camera parameters to a visualizer using current window intrinsics
+    and the provided extrinsic matrix.
+    Note: the cam_data can be obtained with calline adjust_and_dump_camera  durin init (uncomment that line)
+
+    Args:
+        visualizer (o3d.visualization.Visualizer): The visualizer instance.
+        cam_data (dict): Must contain the "extrinsic" key.
+    """
+    ctr = visualizer.get_view_control()
+
+    # Start with current camera parameters to get valid intrinsic
+    current_params = ctr.convert_to_pinhole_camera_parameters()
+    current_params.extrinsic = np.array(cam_data["extrinsic"])
+
+    # Apply updated camera parameters
+    ctr.convert_from_pinhole_camera_parameters(current_params)
+    visualizer.poll_events()
+    visualizer.update_renderer()
+
+
+
+
+
+
+def adjust_and_dump_camera(visualizer, duration_sec=10):
+    """
+    Allows manual camera adjustment for a few seconds and then logs the camera parameters.
+    
+    Args:
+        visualizer (open3d.visualization.Visualizer): Existing visualizer instance.
+        duration_sec (int): Duration in seconds to keep updating the window for camera adjustment.
+    """
+    print("==== CAMERA POSITION SELECTOR =====")
+    print("You have 10 seconds time to adjust the camera, then the data will be dumped")
+    start = time.time()
+    while time.time() - start < duration_sec:
+        visualizer.poll_events()
+        visualizer.update_renderer()
+        time.sleep(0.01)  # small sleep to avoid CPU spinning
+
+    # Extract and dump camera parameters
+    ctr = visualizer.get_view_control()
+    params = ctr.convert_to_pinhole_camera_parameters()
+    cam_json = {
+        "intrinsic": {
+            "width": params.intrinsic.width,
+            "height": params.intrinsic.height,
+            "fx": params.intrinsic.get_focal_length()[0],
+            "fy": params.intrinsic.get_focal_length()[1],
+            "cx": params.intrinsic.get_principal_point()[0],
+            "cy": params.intrinsic.get_principal_point()[1],
+        },
+        "extrinsic": params.extrinsic.tolist()
+    }
+
+    print("\n[Camera Dump] === Copy and paste into code ===")
+    print(json.dumps(cam_json, indent=2))
+
+
 
 
 def create_window_if_needed(mode, window_title_prefix):
@@ -88,7 +223,7 @@ def update_visualizer_by_mode(mode, context):
 
     elif mode == "motion_detection":
         # Do not render here — handled externally
-        return
+        pass
 
     else:
         log_warn(f"[visualizer] Unknown visualization mode: {mode}")
@@ -121,7 +256,7 @@ def visualize_single_frame(points, visualizer, pcd_ref, color):
     # on first use only: add to scene
     pid = id(pcd_ref)
     if pid not in _added_pcds:
-        visualizer.add_geometry(pcd_ref)
+        visualizer.add_geometry(pcd_ref, reset_bounding_box=False)
         _added_pcds.add(pid)
 
     visualizer.poll_events()
@@ -231,8 +366,8 @@ def visualize_dual_frame(raw_points, filtered_points, visualizer):
         visualizer.update_geometry(pcd_filtered)
 
     if not state["geometry_added"]:
-        visualizer.add_geometry(pcd_raw)
-        visualizer.add_geometry(pcd_filtered)
+        visualizer.add_geometry(pcd_raw, reset_bounding_box=False)
+        visualizer.add_geometry(pcd_filtered, reset_bounding_box=False)
         state["geometry_added"] = True
 
     visualizer.poll_events()
@@ -262,7 +397,7 @@ def pick_point_from_cloud(points, title="Pick Points"):
     vis = o3d.visualization.VisualizerWithEditing()
     vis.create_window()
     # draw pointcloud
-    vis.add_geometry(pc)
+    vis.add_geometry(pc, reset_bounding_box=False)
     # start blocking, user selects points
     vis.run()  # user picks points
     vis.destroy_window()
@@ -328,7 +463,7 @@ def draw_bounding_boxes(clusters, visualizer):
 
 
 
-def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2)):
+def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2), fit_camera_to_data=False):
     """
     Draws a polygon as lines on the scene.
     """
@@ -339,4 +474,4 @@ def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2)):
     line_set.points = o3d.utility.Vector3dVector(poly_3d)
     line_set.lines = o3d.utility.Vector2iVector(lines)
     line_set.paint_uniform_color(color)
-    visualizer.add_geometry(line_set, reset_bounding_box=False)
+    visualizer.add_geometry(line_set, reset_bounding_box=fit_camera_to_data)
