@@ -31,7 +31,12 @@ def input_thread():
     """
     print("[Playback] Controls: 'p' = pause/resume, 'n' = next, 'pick1'/'pick2', 'resume', 'q' = quit")
     while True:
-        cmd = input(">> ").strip().lower()
+        try:
+            cmd = input(">> ").strip().lower()
+        except EOFError:
+            print("[playback-control (CLI)] No stdin available (EOF). Launched from a script? Input thread exiting.")
+            break
+
         if cmd == "p":
             _playback_state["paused"] = not _playback_state["paused"]
             print("[Playback] Paused" if _playback_state["paused"] else "[Playback] Playing")
