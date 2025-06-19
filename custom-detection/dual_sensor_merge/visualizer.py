@@ -18,6 +18,7 @@ visualizer_modes = {}
 #########################
 VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
 VISUALIZER_DEFAULT_WINDOW_HEIGHT = 2160
+CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED = True
 VISUALIZER_DEFAULT_CAMERA_POSITION = {
   "intrinsic": {
     "width": 1914,
@@ -74,7 +75,8 @@ def initialize_visualizer(
     visualizer.update_renderer()
 
     # apply configured camera position
-    apply_camera_parameters(visualizer, VISUALIZER_DEFAULT_CAMERA_POSITION)
+    if (CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED):
+        apply_camera_parameters(visualizer, VISUALIZER_DEFAULT_CAMERA_POSITION)
 
     # === uncomment this to create/get the camera position for VISUALIZER_DEFAULT_CAMERA_POSITION ===
     # pause and manually select the camera position to update the configuration
@@ -251,6 +253,7 @@ def visualize_single_frame(points, visualizer, pcd_ref, color):
         return
 
     pcd_ref.points = o3d.utility.Vector3dVector(points.astype(np.float64))
+
     pcd_ref.paint_uniform_color(color)
     visualizer.update_geometry(pcd_ref)
 
@@ -430,45 +433,137 @@ def pick_point_from_cloud(points, title="Pick Points"):
 
 
 
-
-
-# ========== VISUALIZATION ==========
-def draw_bounding_boxes(clusters, visualizer):
+def draw_cluster_boxes(clusters, visualizer):
     """
-    Draws bounding boxes for tracked clusters using Open3D visualizer.
+    Draws bounding boxes around clusters with color-coded status and optional thick line rendering.
 
     Args:
-        clusters (List): List of (cluster_id, centroid, cluster_pcd)
-        visualizer (Visualizer): Open3D visualizer object
+        clusters (List[Dict]): Output from detect_moving_clusters()
+        visualizer (Visualizer): Open3D visualizer
     """
     if visualizer is None:
         return
 
-    from open3d import geometry
+    # Status styles → RGB + whether to draw thicker lines
+    status_styles = {
+        "confirmed": {"color": (0.0, 1.0, 0.0), "thick": True},
+        "retained":  {"color": (0.0, 0.0, 1.0), "thick": True},
+        "matched":   {"color": (1.0, 0.8, 0.0), "thick": True},
+        "unknown":   {"color": (0.5, 0.5, 0.5), "thick": False},
+    }
 
-    # Initialize static variable if not yet set
-    if not hasattr(draw_bounding_boxes, "last_drawn_boxes"):
-        draw_bounding_boxes.last_drawn_boxes = []
+    # Clear existing boxes (reset visualizer)
+    draw_bounding_box(None, visualizer, clear_existing=True, render_now=False)
 
-    # Remove previous bounding boxes
-    for box in draw_bounding_boxes.last_drawn_boxes:
-        try:
-            visualizer.remove_geometry(box, reset_bounding_box=False)
-        except Exception as e:
-            log_warn(f"[draw_bounding_boxes] Failed to remove previous box: {e}")
-    draw_bounding_boxes.last_drawn_boxes.clear()
+    # Draw one box per cluster
+    for cluster in clusters:
+        status = cluster.get("status", "unknown")
+        style = status_styles.get(status, status_styles["unknown"])
 
-    # Draw new bounding boxes
-    for cluster_id, centroid, cluster_pcd in clusters:
-        bbox = cluster_pcd.get_axis_aligned_bounding_box()
-        bbox.color = (0.0, 0.5, 0.0)  # green
-        visualizer.add_geometry(bbox, reset_bounding_box=False)
-        draw_bounding_boxes.last_drawn_boxes.append(bbox)
+        draw_bounding_box(
+            cluster["pcd"],
+            visualizer,
+            color=style["color"],
+            min_volume_m3=0.2,
+            thick_lines_enabled=style["thick"],
+            thickness_hack_layer_offset=0.01,
+            thickness_hack_layer_count=3,
+            clear_existing=False,
+            render_now=False
+        )
 
-        # Optional: Draw ID label using 3D text or a sphere as marker
-        # log_debug(f"[draw_bounding_boxes] Drawn cluster ID: {cluster_id}")
+    # Final update once
+    visualizer.poll_events()
+    visualizer.update_renderer()
 
 
+
+
+
+drawn_bounding_boxes = []  # Global cache of drawn box objects
+def draw_bounding_box(
+    pcd,
+    visualizer,
+    color=(0.0, 0.8, 0.8),
+    min_volume_m3=0.0,
+    clear_existing=False,
+    render_now=True,
+    thick_lines_enabled=False,
+    thickness_hack_layer_offset=0.01,
+    thickness_hack_layer_count=3
+):
+    """
+    Draws a bounding box around a point cloud in Open3D and tracks drawn objects to prevent buildup.
+    Optionally simulates thicker lines by drawing multiple offset boxes.
+
+    Args:
+        pcd (PointCloud or None): Cluster point cloud. If None and clear_existing is True, only clears.
+        visualizer (Visualizer): The Open3D visualizer instance.
+        color (tuple): RGB tuple for box color.
+        min_volume_m3 (float): If box is smaller than this, enlarge it around the centroid.
+        clear_existing (bool): Whether to clear all previously drawn boxes.
+        render_now (bool): Whether to update the visualizer immediately (set False if drawing multiple boxes).
+        thick_lines_enabled (bool): If True, draws multiple offset boxes to fake thicker lines.
+        thickness_hack_layer_offset (float): Size of offset in meters for each fake thickness layer.
+        thickness_hack_layer_count (int): Number of offset layers (3 = center + 2 more)
+    """
+    import open3d as o3d
+
+    if visualizer is None:
+        return
+
+    # === Clear all previously drawn boxes ===
+    if clear_existing:
+        for box in drawn_bounding_boxes:
+            try:
+                visualizer.remove_geometry(box, reset_bounding_box=False)
+            except Exception as e:
+                log_warn(f"[draw_bounding_boxes] Failed to remove box: {e}")
+        drawn_bounding_boxes.clear()
+
+    # === Draw new box (if point cloud provided) ===
+    if pcd is not None:
+        bbox = pcd.get_axis_aligned_bounding_box()
+        volume = bbox.volume()
+
+        # Enlarge box to min volume
+        if min_volume_m3 > 0 and volume < min_volume_m3:
+            center = bbox.get_center()
+            half_size = (min_volume_m3 ** (1/3)) / 2
+            bbox = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=(center[0] - half_size, center[1] - half_size, center[2] - half_size),
+                max_bound=(center[0] + half_size, center[1] + half_size, center[2] + half_size)
+            )
+
+        # Either draw once or multiple times with small offsets
+        boxes_to_draw = []
+
+        if thick_lines_enabled:
+            center = bbox.get_center()
+            extents = bbox.get_extent()
+
+            # Create multiple slightly scaled versions around center
+            for i in range(-thickness_hack_layer_count//2, thickness_hack_layer_count//2 + 1):
+                scale = 1.0 + i * thickness_hack_layer_offset
+                half_ext = 0.5 * extents * scale
+                min_bound = center - half_ext
+                max_bound = center + half_ext
+                hack_box = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
+                hack_box.color = color
+                boxes_to_draw.append(hack_box)
+        else:
+            bbox.color = color
+            boxes_to_draw.append(bbox)
+
+        # Add to visualizer and cache
+        for box in boxes_to_draw:
+            visualizer.add_geometry(box, reset_bounding_box=False)
+            drawn_bounding_boxes.append(box)
+
+    # === Final visualizer update if requested ===
+    if render_now:
+        visualizer.poll_events()
+        visualizer.update_renderer()
 
 
 

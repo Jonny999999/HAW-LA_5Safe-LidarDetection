@@ -6,9 +6,9 @@ import time
 
 from config import COUNT_PEOPLE_ENABLED, COUNT_PEOPLE_DRAW_BOXES, MODE_SECOND_DATA_SET, CROP_POINTCLOUD_POLYGON, CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER, POINTCLOUD_HISTORY_BUFFER_SIZE, PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON
 from utils import log_info, log_warn, log_debug, serialize_numpy_array
-from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_boxes
+from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_box, draw_cluster_boxes
 from filters import apply_highpass_filter, remove_isolated_points, crop_points_within_xy_polygon
-from people_detection import estimate_moving_people, detect_moving_clusters, track_room_occupancy
+from people_detection import estimate_moving_people, track_moving_clusters, track_room_occupancy
 
 
 # === Rolling buffer for motion filtering ===
@@ -87,16 +87,17 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         o3d.visualization.draw_geometries_with_editing([pc])
 
 
-    # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
-        clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, status_cache=status_cache)
+        # advanced tracking of moving clusters
+        clusters = track_moving_clusters(filtered_frame, status_cache=status_cache) #using default detection thresholds (see definition)
         status_cache.update_status_key("TIMING_MOTION_DETECTION__CLUSTER_DETECTION", f"{(time.time() - t2)*1000:.0f} ms", trigger_file_update=False)
 
         t3 = time.time()
         if visualizer is not None:
-            draw_bounding_boxes(clusters, visualizer)
+            draw_cluster_boxes(clusters, visualizer)
             draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
-        #people_inside = track_room_occupancy(clusters, polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, status_cache=status_cache)
+
+            # count people entering and leaving the room
             people_inside = track_room_occupancy(
             clusters,
             polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON,
@@ -108,7 +109,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         #print(f"Cluster type: {type(clusters[0])}, content: {clusters[0]}")
         status_cache.update_dashboard_key(
             "moving_people_clusters_arrayofserializednumpyarrays",
-            [serialize_numpy_array(cluster[2].points) for cluster in clusters]
+            [serialize_numpy_array(cluster["pcd"].points) for cluster in clusters]
         )
 
         ## old people estimation TODO: drop this

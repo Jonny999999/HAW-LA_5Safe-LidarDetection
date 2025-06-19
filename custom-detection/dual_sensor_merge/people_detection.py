@@ -13,6 +13,9 @@ from visualizer import draw_2d_polygon
 # === PEOPLE DETECTION (CLUSTERS)
 # ===============================
 
+# TODO: Drop this, function is legacy and no long used
+# Globals (optionally refactor to avoid)
+drawn_bounding_boxes = []
 def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30, visualizer=None):
     """
     Detects and optionally visualizes clusters of points likely to be moving people.
@@ -85,11 +88,6 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30,
 
 
 
-# Globals (optionally refactor to avoid)
-drawn_bounding_boxes = []
-
-# Global buffer for room occupancy tracking (optional usage)
-_default_history_buffer = deque(maxlen=5)
 
 
 
@@ -97,124 +95,118 @@ _default_history_buffer = deque(maxlen=5)
 
 
 
-# Globals (optionally refactor to avoid)
-drawn_bounding_boxes = []
 
-
-
-# ========== CLUSTER DETECTION ==========
-def detect_moving_clusters(
+def track_moving_clusters(
     pointcloud_np,
-    distance_threshold=0.2,
-    min_points=30,
-    max_points=5000,
-    min_z_height=0.8,
-    min_volume_m3=0,
-    min_frames_to_confirm=5,
+    distance_threshold=0.4, # points within that radius are merged as one cluster
+    min_points=50, # min points in a cluster to detect as person
+    max_moving_points_ignore_frame=4000, # ignore entire frame if e.g. sensor moved
+    min_z_height=0.6, # initial detection threshold
+    min_volume_m3=0.5, # initial detection threshold
+    min_frames_to_confirm=10, # frame count the initial thresholds have to be fulfilled to be added as cluster
     status_cache=None,
-    retain_frames=40,
+    retain_frames=60, # at 5fps
     match_threshold=1.0
 ):
     """
     Detects and persistently tracks moving clusters using DBSCAN and centroid matching.
 
-    This function improves the stability of motion detection by remembering and matching clusters
-    over time. It filters out clusters that are too small or only appear momentarily when first detected.
-
-    Args:
-        pointcloud_np (np.ndarray): Input point cloud (Nx3)
-        distance_threshold (float): DBSCAN epsilon (meters)
-        min_points (int): Minimum points per cluster
-        max_points (int): Max points before skipping frame
-        min_z_height (float): Filter out flat (floor-like) clusters (only during first detection)
-        min_volume_m3 (float): Minimum bounding box volume in m³ to consider cluster valid (only during first detection)
-        min_frames_to_confirm (int): How many frames a new cluster must be detected before confirmed
-        status_cache: Optional status cache
-        retain_frames (int): How many frames to keep unmatched clusters
-        match_threshold (float): Max centroid distance to match clusters
+    Unconfirmed clusters must pass filters (volume, height) and appear for at least N frames
+    before becoming "confirmed". Confirmed clusters are easier to track and retained longer
+    even if movement is minimal or their shape shrinks.
 
     Returns:
-        List of (cluster_id, centroid, cluster_pcd) for confirmed clusters
+        List of cluster dicts with id, centroid, point cloud, and status.
     """
     import numpy as np
     import open3d as o3d
 
-    if not hasattr(detect_moving_clusters, "last_clusters"):
-        detect_moving_clusters.last_clusters = {}
-        detect_moving_clusters.cluster_id_counter = 0
+    # === Init persistent state across frames ===
+    if not hasattr(track_moving_clusters, "last_clusters"):
+        track_moving_clusters.last_clusters = {}
+        track_moving_clusters.cluster_id_counter = 0
 
-    if pointcloud_np.shape[0] > max_points:
-        log_warn(f"[detect clusters] Too many points ({pointcloud_np.shape[0]}), skipping detection.")
-        return []
-    if pointcloud_np.shape[0] == 0:
-        log_info("[detect clusters] No points provided.")
-        return []
-
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pointcloud_np)
-    labels = np.array(pcd.cluster_dbscan(eps=distance_threshold, min_points=min_points, print_progress=False))
-
-    if labels.size == 0 or np.max(labels) < 0:
-        log_info("[detect clusters] No clusters found.")
-        return []
-
-    unique_labels = np.unique(labels)
     new_clusters = []
-    for label in unique_labels:
-        if label == -1:
-            continue
-        indices = np.where(labels == label)[0]
-        cluster = pcd.select_by_index(indices)
-        centroid = np.mean(np.asarray(cluster.points), axis=0)
-        bbox = cluster.get_axis_aligned_bounding_box()
 
-        new_clusters.append({
-            "centroid": centroid,
-            "pcd": cluster,
-            "bbox": bbox,
-            "volume": bbox.volume(),
-            "z_range": np.ptp(np.asarray(cluster.points)[:, 2])
-        })
+    # === Run DBSCAN if points exist and under max limit ===
+    if pointcloud_np.shape[0] == 0:
+        log_info("[detect clusters] No points received.")
+    elif pointcloud_np.shape[0] > max_moving_points_ignore_frame:
+        log_warn(f"[detect clusters] Too many points ({pointcloud_np.shape[0]}), skipping frame.")
+    else:
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pointcloud_np)
+        labels = np.array(pcd.cluster_dbscan(eps=distance_threshold, min_points=min_points, print_progress=False))
 
-    matched_ids = set()
-    used_prev_ids = set()
-    updated_cluster_state = {}
+        if labels.size > 0 and np.max(labels) >= 0:
+            unique_labels = np.unique(labels)
+            for label in unique_labels:
+                if label == -1:
+                    continue
+                indices = np.where(labels == label)[0]
+                cluster = pcd.select_by_index(indices)
+                points = np.asarray(cluster.points)
+                centroid = np.mean(points, axis=0)
+                bbox = cluster.get_axis_aligned_bounding_box()
+                volume = bbox.volume()
+                z_range = np.ptp(points[:, 2])
+
+                new_clusters.append({
+                    "centroid": centroid,
+                    "pcd": cluster,
+                    "bbox": bbox,
+                    "volume": volume,
+                    "z_range": z_range
+                })
+        else:
+            log_info("[detect clusters] DBSCAN found no clusters.")
+
+    # === Matching and cluster tracking ===
     results = []
-    new_id_count = 0
+    updated_cluster_state = {}
+    used_prev_ids = set()
     reused_id_count = 0
+    new_id_count = 0
+    expired_ids = []
 
     for cluster in new_clusters:
         curr_centroid = np.array(cluster["centroid"])
         best_id = None
         best_dist = float("inf")
 
-        for prev_id, prev_data in detect_moving_clusters.last_clusters.items():
+        for prev_id, prev_data in track_moving_clusters.last_clusters.items():
             if prev_id in used_prev_ids:
                 continue
-            prev_centroid = np.array(prev_data["centroid"])
-            dist = np.linalg.norm(curr_centroid - prev_centroid)
+            dist = np.linalg.norm(curr_centroid - prev_data["centroid"])
             if dist < match_threshold and dist < best_dist:
-                best_dist = dist
                 best_id = prev_id
+                best_dist = dist
 
         if best_id is not None:
             reused_id_count += 1
             used_prev_ids.add(best_id)
-            prev_data = detect_moving_clusters.last_clusters[best_id]
+            prev_data = track_moving_clusters.last_clusters[best_id]
             frames_observed = prev_data.get("frames_observed", 0) + 1
+            was_confirmed = prev_data.get("confirmed", False)
 
-            if frames_observed < min_frames_to_confirm:
+            if not was_confirmed:
                 passes_volume = cluster["volume"] >= min_volume_m3
                 passes_height = cluster["z_range"] >= min_z_height
+                if not passes_volume:
+                    log_debug(f"[cluster {best_id}] Volume too small: {cluster['volume']:.4f} m³")
+                if not passes_height:
+                    log_debug(f"[cluster {best_id}] Height too small: {cluster['z_range']:.4f} m")
+                confirmed = passes_volume and passes_height and frames_observed >= min_frames_to_confirm
             else:
-                passes_volume = True
-                passes_height = True
-
-            confirmed = passes_volume and passes_height and frames_observed >= min_frames_to_confirm
+                confirmed = True
+                if cluster["bbox"].volume() < prev_data["volume"] * 0.5:
+                    cluster["bbox"] = prev_data["bbox"]
+                    cluster["pcd"] = prev_data["pcd"]
 
             updated_cluster_state[best_id] = {
                 "centroid": curr_centroid,
                 "pcd": cluster["pcd"],
+                "bbox": cluster["bbox"],
                 "frames_since_seen": 0,
                 "frames_observed": frames_observed,
                 "confirmed": confirmed,
@@ -222,18 +214,24 @@ def detect_moving_clusters(
                 "z_range": cluster["z_range"]
             }
 
-            if confirmed and not prev_data.get("confirmed", False):
-                results.append((best_id, curr_centroid, cluster["pcd"]))
-                log_warn(f"[detect clusters] Cluster CONFIRMED id={best_id} (total={len(results)})")
-            elif confirmed:
-                results.append((best_id, curr_centroid, cluster["pcd"]))
+            if confirmed:
+                results.append({
+                    "id": best_id,
+                    "centroid": curr_centroid,
+                    "pcd": cluster["pcd"],
+                    "status": "confirmed"
+                })
+                if not was_confirmed:
+                    log_warn(f"[detect clusters] Cluster CONFIRMED id={best_id}")
         else:
-            new_id = detect_moving_clusters.cluster_id_counter
-            detect_moving_clusters.cluster_id_counter += 1
+            new_id = track_moving_clusters.cluster_id_counter
+            track_moving_clusters.cluster_id_counter += 1
             new_id_count += 1
+
             updated_cluster_state[new_id] = {
-                "centroid": curr_centroid,
+                "centroid": cluster["centroid"],
                 "pcd": cluster["pcd"],
+                "bbox": cluster["bbox"],
                 "frames_since_seen": 0,
                 "frames_observed": 1,
                 "confirmed": False,
@@ -241,29 +239,35 @@ def detect_moving_clusters(
                 "z_range": cluster["z_range"]
             }
 
-    expired_ids = []
-    for prev_id, prev_data in detect_moving_clusters.last_clusters.items():
+    # === Handle unmatched previous clusters ===
+    for prev_id, prev_data in track_moving_clusters.last_clusters.items():
         if prev_id not in used_prev_ids:
             prev_data["frames_since_seen"] += 1
             if prev_data["frames_since_seen"] < retain_frames:
                 updated_cluster_state[prev_id] = prev_data
                 if prev_data.get("confirmed", False):
-                    results.append((prev_id, prev_data["centroid"], prev_data["pcd"]))
+                    results.append({
+                        "id": prev_id,
+                        "centroid": prev_data["centroid"],
+                        "pcd": prev_data["pcd"],
+                        "status": "retained"
+                    })
             else:
                 expired_ids.append(prev_id)
-                log_warn(f"[detect clusters] Cluster DROPPED id={prev_id} (total={len(results)})")
+                log_warn(f"[detect clusters] Cluster DROPPED id={prev_id}")
 
-    detect_moving_clusters.last_clusters = updated_cluster_state
-
-    retained_count = len(results) - reused_id_count
+    # === Finalize and update ===
+    track_moving_clusters.last_clusters = updated_cluster_state
+    retained_count = len([r for r in results if r["status"] == "retained"])
     log_info(f"[detect clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {retained_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
 
     if status_cache:
-        status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", f"{len(results)}")
-        moving_now = reused_id_count + new_id_count
-        status_cache.update_status_key("DETECTION_MOVING_PEOPLE", f"{moving_now}")
+        status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", str(len(results)))
+        status_cache.update_status_key("DETECTION_MOVING_PEOPLE", str(reused_id_count + new_id_count))
 
     return results
+
+
 
 
 
@@ -319,7 +323,8 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
             draw_2d_polygon(list(inner_poly.exterior.coords), visualizer, color=(0.2, 0.8, 0.2))  # green
 
     # Sort cluster tuples into dictionary by ID
-    cluster_dict = {cid: centroid for (cid, centroid, _) in clusters}
+    #cluster_dict = {cid: centroid for (cid, centroid, _) in clusters}
+    cluster_dict = {c["id"]: c["centroid"] for c in clusters}
     log_debug(f"[track_room_occupancy] Current cluster IDs: {list(cluster_dict.keys())}")
 
     # Append this frame's centroids to history buffer (as dict of cid → position)
