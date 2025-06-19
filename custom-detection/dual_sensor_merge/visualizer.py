@@ -5,7 +5,7 @@ from scipy.spatial import cKDTree
 import time
 import json
 
-from utils import log_info, log_warn, log_debug
+from utils import log_info, log_warn, log_debug, log_error
 import config
 
 
@@ -339,10 +339,8 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
         pointcloud2_dominant_red = pointcloud2_dominant_red[:, :3]
 
     # Remove near duplicates (optional but keeps visibility)
-    t1 = time.time()
     if pointcloid1_gray.size > 0 and pointcloud2_dominant_red.size > 0:
         pointcloid1_gray = remove_near_duplicates(pointcloid1_gray, pointcloud2_dominant_red)
-    print(f"[DEBUG visualize_dual] T1 removing duplicates t={(time.time()-t1)*1000:.0f} ms")
 
     # determine which visualizer/window is used to use the correct cache
     vis_id = id(visualizer)
@@ -358,7 +356,6 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
 
     state = _visualizer_objects[vis_id]
 
-    t2 = time.time()
     # Update geometry with new points
     if pointcloid1_gray.size > 0:
         state["pcd_raw"].points = o3d.utility.Vector3dVector(pointcloid1_gray.astype(np.float64))
@@ -374,20 +371,15 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
         visualizer.add_geometry(state["pcd_raw"], reset_bounding_box=False)
         visualizer.add_geometry(state["pcd_filtered"], reset_bounding_box=False)
         state["added"] = True
-    print(f"[DEBUG visualize_dual] T2 copy pointclouds t={(time.time()-t2)*1000:.0f} ms")
 
-    t3 = time.time()
     # Always update visuals
     if pointcloid1_gray.size > 0:
         visualizer.update_geometry(state["pcd_raw"])
     if pointcloud2_dominant_red.size > 0:
         visualizer.update_geometry(state["pcd_filtered"])
-    print(f"[DEBUG visualize_dual] T3 updating geometries t={(time.time()-t3)*1000:.0f} ms")
 
-    t4 = time.time()
     visualizer.poll_events()
     visualizer.update_renderer()
-    print(f"[DEBUG visualize_dual] T4 polling-events, updating-renderer t={(time.time()-t4)*1000:.0f} ms")
 
 
 
@@ -481,15 +473,47 @@ def draw_bounding_boxes(clusters, visualizer):
 
 
 
+import hashlib
+
+_drawn_polygons_cache = {}  # vis_id → set of polygon hashes
+
 def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2), fit_camera_to_data=False):
     """
-    Draws a polygon as lines on the scene.
+    Draws a polygon as lines on the scene, only once per visualizer.
+    Prevents duplicate geometries which slow down Open3D rendering over time.
     """
+    if visualizer is None or not polygon_xy:
+        log_error("draw_2d_polygon: no visualizer or polygon provided")
+        return
+
+    vis_id = id(visualizer)
+    # create cached object for this visualizer if not existing
+    if vis_id not in _drawn_polygons_cache:
+        _drawn_polygons_cache[vis_id] = set()
+
+    # hash polygon details to compare later if already existing
+    polygon_hash = hashlib.md5(
+        np.round(np.array(polygon_xy, dtype=np.float32), 6).tobytes() + 
+        bytes(np.round(np.array(color, dtype=np.float32), 4))
+    ).hexdigest()
+    if polygon_hash in _drawn_polygons_cache[vis_id]:
+        return  # Already drawn
+
+
+    # Convert to 3D and create LineSet
     poly_3d = [(x, y, 0.0) for x, y in polygon_xy] + [(polygon_xy[0][0], polygon_xy[0][1], 0.0)]
     lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
 
+    log_info(f"draw_2d_polygon: Adding new polygon to visualizer (hash:{polygon_hash})")
     line_set = o3d.geometry.LineSet()
     line_set.points = o3d.utility.Vector3dVector(poly_3d)
     line_set.lines = o3d.utility.Vector2iVector(lines)
     line_set.paint_uniform_color(color)
-    visualizer.add_geometry(line_set, reset_bounding_box=fit_camera_to_data)
+
+    try:
+        visualizer.add_geometry(line_set, reset_bounding_box=fit_camera_to_data)
+        _drawn_polygons_cache[vis_id].add(polygon_hash)
+        visualizer.poll_events()
+        visualizer.update_renderer()
+    except Exception as e:
+        log_error(f"[draw_2d_polygon] Failed to add geometry: {e}")
