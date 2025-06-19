@@ -9,6 +9,8 @@ from filters import apply_highpass_filter, remove_isolated_points, crop_points_w
 from people_detection import estimate_moving_people, detect_moving_clusters, track_room_occupancy
 from collections import deque
 
+import time
+
 
 # === Rolling buffer for motion filtering ===
 # Used for highpass, temporal denoise, clustering
@@ -27,6 +29,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         visualizer (open3d.visualization.Visualizer): Initialized Open3D window
     """
 
+    t1 = time.time()
     # Strip to XYZ only (drop intensity/ring/time if present)
     xyz_points = new_pointcloud[:, :3]
     # Add to rolling history buffer
@@ -36,6 +39,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     if len(pointcloud_history_buffer) < POINTCLOUD_HISTORY_BUFFER_SIZE:
         log_warn(f"[processor] too few frames in buffer for processing, waiting for buffer to fill up...({len(pointcloud_history_buffer)}/{POINTCLOUD_HISTORY_BUFFER_SIZE})")
         return
+    status_cache.update_status_key("DEBUG_PROCESSING_PTC_BUFFER_LEN", len(pointcloud_history_buffer))
 
     # Latest raw LiDAR scan
     latest_frame = pointcloud_history_buffer[-1]
@@ -64,8 +68,10 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     else:
         log_warn(f"Invalid MODE_SECOND_DATA_SET: {MODE_SECOND_DATA_SET}")
         return
+    status_cache.update_status_key("TIMING_MOTION_DETECTION__APPLY_FILTERS", f"{time.time() - t1:.3f} ms", trigger_file_update=False)
 
     # === Update cached pointcloud that is sent to dashboard via TCP ===
+    t2 = time.time()
     status_cache.update_dashboard_key("pointcloud_highpass_denoised_numpyarray", filtered_frame)
 
     import open3d as o3d
@@ -86,6 +92,8 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
         clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, status_cache=status_cache)
+        status_cache.update_status_key("TIMING_MOTION_DETECTION__CLUSTER_DETECTION", f"{time.time() - t2:.3f} ms", trigger_file_update=False)
+        t3 = time.time()
         if visualizer is not None:
             draw_bounding_boxes(clusters, visualizer)
             draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
@@ -103,6 +111,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
             "moving_people_clusters_arrayofserializednumpyarrays",
             [serialize_numpy_array(cluster[2].points) for cluster in clusters]
         )
+        status_cache.update_status_key("TIMING_MOTION_DETECTION__VISUALIZER_BOXES", f"{time.time() - t3:.3f} ms", trigger_file_update=False)
 
         ## old people estimation TODO: drop this
         #estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
@@ -110,7 +119,9 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
 
     # Visualize both point clouds
     if visualizer is not None:
+        t4 = time.time()
         visualize_dual_frame(latest_frame, filtered_frame, visualizer)
+        status_cache.update_status_key("TIMING_MOTION_DETECTION__VISUALIZER_POINTCLOUDS", f"{time.time() - t4:.3f} ms", trigger_file_update=False)
 
 
 

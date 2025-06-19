@@ -28,6 +28,7 @@ from tcp_senderthread import dashboard_tcp_server
 
 
 
+import gc, tracemalloc
 
 
 
@@ -46,6 +47,9 @@ from tcp_senderthread import dashboard_tcp_server
 
 
 def main():
+    #gc.set_debug(gc.DEBUG_LEAK)
+    import tracemalloc
+    tracemalloc.start()
 
     ############################
     ####### Declarations #######
@@ -196,6 +200,12 @@ def main():
     # run motion detection
     # handle play/pause/launch-point-picker
     while True:
+        snapshot = tracemalloc.take_snapshot()
+        top_stats = snapshot.statistics('lineno')
+
+        print("[Memory] Top 10 memory allocations:")
+        for stat in top_stats[:10]:
+            print(stat)
         #=== get synced pointcloud from queue ===
         stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() # TODO: add timeout here to stay responsive when no data received?
         stats_processing_start_time = time.time()
@@ -206,6 +216,7 @@ def main():
 
 
         # === Apply transformation ===
+        t3 = time.time()
         # create Pointcloud from 3 dimensional array
         pointcloud_2_transformed_o3d = o3d.geometry.PointCloud()
         pointcloud_2_transformed_o3d.points = o3d.utility.Vector3dVector(pointcloud_2_array.astype(np.float64))
@@ -222,6 +233,7 @@ def main():
         # filter out points outside of the configured polygon (config.py)
         # also drop points that are above certain z coordinate (1m)
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
+        status_cache.update_status_key("TIMING_POINTCLOUD_MERGE", f"{time.time() - t3:.3f} ms", trigger_file_update=False)
 
         # === Update cached pointcloud that is sent to dashboard via TCP ===
         status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
@@ -238,21 +250,27 @@ def main():
             "pc_filtered": pointcloud_merged_filtered_array,
         }
         # update each visualizer depending on its mode
+        t1 = time.time()
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_1_MODE, context)
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_2_MODE, context)
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_3_MODE, context)
+        status_cache.update_status_key("TIMING_UPDATE_VISUALIZERS", f"{time.time() - t1:.3f} ms", trigger_file_update=False)
+
 
 
         # === run Motion Detection ===
         if config.MOTION_DETECTION_ENABLED:
             # determine which visualizer window is configured to display the motion detection output
             # run motion detection
+            t2 = time.time()
             process_and_visualize_latest_frame(context["pc_filtered"], get_visualizer_by_mode("motion_detection"), status_cache)
+            status_cache.update_status_key("TIMING_MOTION_DETECTION", f"{time.time() - t2:.3f} ms", trigger_file_update=False)
 
 
         # === File export of merged frames ===
         # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
         # This Line does not have to be changed for the event, that File Export will be deactivated
+        t4 = time.time()
         LazFileSave.save_frame(pointcloud_merged_filtered_array)
 
 
@@ -277,6 +295,7 @@ def main():
             time.sleep(0.05)
             continue # wait until resumede_frame(pointcloud_merged_filtered_array)
 
+        status_cache.update_status_key("TIMING_FILE_SAVE_POINT_PICKER", f"{time.time() - t4:.3f} ms", trigger_file_update=False)
 
         # === update statistics ===
         # done processing - Log processing duration to file

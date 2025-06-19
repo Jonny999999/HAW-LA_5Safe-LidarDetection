@@ -38,7 +38,8 @@ class GlobalStatusCache:
         self.status_file_creation_enabled = status_file_creation_enabled
         self._first_write_done = False
 
-        self.filtered_keys_to_skip = config.STATUS_FILE_KEYS_NOT_ADDED_TO_FILE or []
+        # try to get key filters from config if defined
+        self.filtered_keys_to_skip = getattr(config, "STATUS_FILE_KEYS_NOT_ADDED_TO_FILE", [])
         self.status_filter_enabled = True
 
 
