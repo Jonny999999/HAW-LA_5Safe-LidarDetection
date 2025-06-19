@@ -200,12 +200,12 @@ def main():
     # run motion detection
     # handle play/pause/launch-point-picker
     while True:
-        snapshot = tracemalloc.take_snapshot()
-        top_stats = snapshot.statistics('lineno')
+        #snapshot = tracemalloc.take_snapshot()
+        #top_stats = snapshot.statistics('lineno')
 
-        print("[Memory] Top 10 memory allocations:")
-        for stat in top_stats[:10]:
-            print(stat)
+        #print("[Memory] Top 10 memory allocations:")
+        #for stat in top_stats[:10]:
+        #    print(stat)
         #=== get synced pointcloud from queue ===
         stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() # TODO: add timeout here to stay responsive when no data received?
         stats_processing_start_time = time.time()

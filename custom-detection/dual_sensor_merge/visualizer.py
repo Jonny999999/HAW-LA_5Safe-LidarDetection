@@ -315,23 +315,23 @@ def remove_near_duplicates(raw, filtered, threshold=0.001):
 
 # Map visualizer ID -> pointcloud objects and state (replace global variables for use with multiple visualizer windows)
 _visualizer_objects = {}
+
 def visualize_dual_frame(raw_points, filtered_points, visualizer):
     """
-    Visualizes two point clouds in Open3D:
-    - raw_points = gray
-    - filtered_points = red
-    Ensures overlapping points are drawn correctly.
+    Visualizes raw (gray) and filtered (red) point clouds in Open3D.
+    Clears only the previously drawn point clouds to avoid GPU buildup.
+    Other geometry (e.g. bounding boxes, polygons) remains untouched.
 
     Args:
         raw_points (np.ndarray): Raw point cloud (Nx3)
-        filtered_points (np.ndarray): Processed cloud (Nx3)
-        visualizer (Visualizer): Open3D window
+        filtered_points (np.ndarray): Processed point cloud (Nx3)
+        visualizer (open3d.visualization.Visualizer): Visualizer instance
     """
-    if raw_points.size == 0 and filtered_points.size == 0:
-        log_warn("Both frames empty, skipping visualization.")
+    if visualizer is None or (raw_points.size == 0 and filtered_points.size == 0):
+        log_warn("No visualizer or Both frames empty, skipping visualization.")
         return
 
-    # Automatically slice down to 3D if needed
+    # Slice to XYZ if extra dimensions present
     if raw_points.ndim == 2 and raw_points.shape[1] > 3:
         raw_points = raw_points[:, :3]
     if filtered_points.ndim == 2 and filtered_points.shape[1] > 3:
@@ -343,35 +343,45 @@ def visualize_dual_frame(raw_points, filtered_points, visualizer):
         #raw_points = remove_exact_duplicates(raw_points, filtered_points) # this is very inefficient (cpu >100%)
         raw_points = remove_near_duplicates(raw_points, filtered_points)
 
+    # Get or init state
     vis_id = id(visualizer)
-    if vis_id not in _visualizer_objects:
-        _visualizer_objects[vis_id] = {
-            "pcd_raw": o3d.geometry.PointCloud(),
-            "pcd_filtered": o3d.geometry.PointCloud(),
-            "geometry_added": False
-        }
+    if vis_id in _visualizer_objects:
+        # Remove previously drawn clouds completely
+        # we re-create the objects at every run instead of updating
+        # this prevents slow down over time (2000ms duration after 10min runtime)
+        state = _visualizer_objects[vis_id]
+        try:
+            visualizer.remove_geometry(state["pcd_raw"], reset_bounding_box=False)
+        except:
+            pass
+        try:
+            visualizer.remove_geometry(state["pcd_filtered"], reset_bounding_box=False)
+        except:
+            pass
+    else:
+        _visualizer_objects[vis_id] = {}
 
-    state = _visualizer_objects[vis_id]
-    pcd_raw = state["pcd_raw"]
-    pcd_filtered = state["pcd_filtered"]
+    # Create fresh geometries (avoids GPU buffer fragmentation)
+    pcd_raw = o3d.geometry.PointCloud()
+    pcd_filtered = o3d.geometry.PointCloud()
 
     if raw_points.size > 0:
         pcd_raw.points = o3d.utility.Vector3dVector(raw_points.astype(np.float64))
         pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])
-        visualizer.update_geometry(pcd_raw)
+        visualizer.add_geometry(pcd_raw, reset_bounding_box=False)
 
     if filtered_points.size > 0:
         pcd_filtered.points = o3d.utility.Vector3dVector(filtered_points.astype(np.float64))
         pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
-        visualizer.update_geometry(pcd_filtered)
-
-    if not state["geometry_added"]:
-        visualizer.add_geometry(pcd_raw, reset_bounding_box=False)
         visualizer.add_geometry(pcd_filtered, reset_bounding_box=False)
-        state["geometry_added"] = True
+
+    # Store only this function's own geometry references
+    _visualizer_objects[vis_id]["pcd_raw"] = pcd_raw
+    _visualizer_objects[vis_id]["pcd_filtered"] = pcd_filtered
 
     visualizer.poll_events()
     visualizer.update_renderer()
+
 
 
 
