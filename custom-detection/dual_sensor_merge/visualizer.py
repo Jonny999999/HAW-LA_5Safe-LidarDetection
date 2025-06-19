@@ -320,7 +320,6 @@ def remove_near_duplicates(raw, filtered, threshold=0.001):
 # Map visualizer ID -> pointcloud objects and state (replace global variables for use with multiple visualizer windows)
 
 _visualizer_objects = {}  # global cache: vis_id -> {pcd_raw, pcd_filtered, added}
-
 def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer):
     """
     Efficiently visualizes pointcloud1 (gray) and pointcloud2 (red) in Open3D.
@@ -361,13 +360,12 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
     state = _visualizer_objects[vis_id]
 
     # Update geometry with new points
-    if pointcloid1_gray.size > 0:
-        state["pcd_raw"].points = o3d.utility.Vector3dVector(pointcloid1_gray.astype(np.float64))
-        state["pcd_raw"].paint_uniform_color([0.8, 0.8, 0.8])
+    # note: when empty pointcloud was provided, the previous points are cleared
+    state["pcd_raw"].points = o3d.utility.Vector3dVector(pointcloid1_gray.astype(np.float64))
+    state["pcd_raw"].paint_uniform_color([0.8, 0.8, 0.8])
 
-    if pointcloud2_dominant_red.size > 0:
-        state["pcd_filtered"].points = o3d.utility.Vector3dVector(pointcloud2_dominant_red.astype(np.float64))
-        state["pcd_filtered"].paint_uniform_color([1.0, 0.0, 0.0])
+    state["pcd_filtered"].points = o3d.utility.Vector3dVector(pointcloud2_dominant_red.astype(np.float64))
+    state["pcd_filtered"].paint_uniform_color([1.0, 0.0, 0.0])
 
     # Add geometry only once
     if not state["added"]:
@@ -446,10 +444,12 @@ def draw_cluster_boxes(clusters, visualizer):
 
     # Status styles → RGB + whether to draw thicker lines
     status_styles = {
-        "confirmed": {"color": (0.0, 1.0, 0.0), "thick": True},
-        "retained":  {"color": (0.0, 0.0, 1.0), "thick": True},
-        "matched":   {"color": (1.0, 0.8, 0.0), "thick": True},
-        "unknown":   {"color": (0.5, 0.5, 0.5), "thick": False},
+        "confirmed":            {"color": (0.0, 1.0, 0.0), "thick": True},   # green
+        "retained":             {"color": (0.0, 0.0, 1.0), "thick": True},   # blue
+        "matched":              {"color": (1.0, 0.8, 0.0), "thick": True},   # orange-yellow (case not possible)
+        "pending-confirmation": {"color": (0.0, 0.0, 0.0), "thick": True},  # black
+        "first-detected-or-not-meeting-critera": {"color": (0.5, 0.5, 0.5), "thick": False},   # gray
+        "unknown":              {"color": (0.5, 0.5, 0.5), "thick": False}   # gray
     }
 
     # Clear existing boxes (reset visualizer)
@@ -464,7 +464,7 @@ def draw_cluster_boxes(clusters, visualizer):
             cluster["pcd"],
             visualizer,
             color=style["color"],
-            min_volume_m3=0.2,
+            min_volume_m3=0.1,
             thick_lines_enabled=style["thick"],
             thickness_hack_layer_offset=0.01,
             thickness_hack_layer_count=3,

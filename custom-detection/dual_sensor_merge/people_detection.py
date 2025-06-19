@@ -96,17 +96,18 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30,
 
 
 
+drawn_bounding_boxes = []
 def track_moving_clusters(
     pointcloud_np,
-    distance_threshold=0.4, # points within that radius are merged as one cluster
-    min_points=50, # min points in a cluster to detect as person
+    distance_threshold=0.5, # points within that radius are merged as one cluster
+    min_points=70, # min points in a cluster to considered as potential cluster/movement at all
     max_moving_points_ignore_frame=4000, # ignore entire frame if e.g. sensor moved
-    min_z_height=0.6, # initial detection threshold
-    min_volume_m3=0.5, # initial detection threshold
-    min_frames_to_confirm=10, # frame count the initial thresholds have to be fulfilled to be added as cluster
+    min_z_height=0.5, # initial detection threshold
+    min_volume_m3=0.2, # initial detection threshold
+    min_frames_to_confirm=12, # frame count the initial thresholds have to be fulfilled to be added as cluster
     status_cache=None,
-    retain_frames=60, # at 5fps
-    match_threshold=1.0
+    retain_frames=100, # at 5fps
+    match_threshold=1.2 # distance of cluster center from old to new one to be detected as a match
 ):
     """
     Detects and persistently tracks moving clusters using DBSCAN and centroid matching.
@@ -130,9 +131,9 @@ def track_moving_clusters(
 
     # === Run DBSCAN if points exist and under max limit ===
     if pointcloud_np.shape[0] == 0:
-        log_info("[detect clusters] No points received.")
+        log_info("[track-clusters] No points received.")
     elif pointcloud_np.shape[0] > max_moving_points_ignore_frame:
-        log_warn(f"[detect clusters] Too many points ({pointcloud_np.shape[0]}), skipping frame.")
+        log_warn(f"[track-clusters] Too many points ({pointcloud_np.shape[0]}), skipping frame.")
     else:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pointcloud_np)
@@ -159,7 +160,7 @@ def track_moving_clusters(
                     "z_range": z_range
                 })
         else:
-            log_info("[detect clusters] DBSCAN found no clusters.")
+            log_info("[track-clusters] DBSCAN found no clusters.")
 
     # === Matching and cluster tracking ===
     results = []
@@ -189,15 +190,26 @@ def track_moving_clusters(
             frames_observed = prev_data.get("frames_observed", 0) + 1
             was_confirmed = prev_data.get("confirmed", False)
 
-            if not was_confirmed:
+            if not was_confirmed: # not yet confirmed, evaluate if confirming that cluster
                 passes_volume = cluster["volume"] >= min_volume_m3
                 passes_height = cluster["z_range"] >= min_z_height
                 if not passes_volume:
                     log_debug(f"[cluster {best_id}] Volume too small: {cluster['volume']:.4f} m³")
                 if not passes_height:
                     log_debug(f"[cluster {best_id}] Height too small: {cluster['z_range']:.4f} m")
-                confirmed = passes_volume and passes_height and frames_observed >= min_frames_to_confirm
-            else:
+                if passes_volume and passes_height and frames_observed >= min_frames_to_confirm: # successfully confirmed new cluster
+                    confirmed = True
+                elif passes_volume and passes_height: # valid but frames pending
+                    confirmed = False
+                    results.append({
+                        "id": best_id,
+                        "centroid": curr_centroid,
+                        "pcd": cluster["pcd"],
+                        "status": "pending-confirmation"
+                    })
+                else:
+                    continue # when criteria is not met wo dont track the cluster
+            else: # matched again to an already confirmed cluster
                 confirmed = True
                 if cluster["bbox"].volume() < prev_data["volume"] * 0.5:
                     cluster["bbox"] = prev_data["bbox"]
@@ -222,8 +234,8 @@ def track_moving_clusters(
                     "status": "confirmed"
                 })
                 if not was_confirmed:
-                    log_warn(f"[detect clusters] Cluster CONFIRMED id={best_id}")
-        else:
+                    log_warn(f"[track-clusters] Cluster CONFIRMED id={best_id}")
+        else: # no match found
             new_id = track_moving_clusters.cluster_id_counter
             track_moving_clusters.cluster_id_counter += 1
             new_id_count += 1
@@ -239,10 +251,19 @@ def track_moving_clusters(
                 "z_range": cluster["z_range"]
             }
 
+            results.append({
+                "id": new_id,
+                "centroid": cluster["centroid"],
+                "pcd": cluster["pcd"],
+                "status": "first-detected-or-not-meeting-criteria"
+            })
+
     # === Handle unmatched previous clusters ===
     for prev_id, prev_data in track_moving_clusters.last_clusters.items():
-        if prev_id not in used_prev_ids:
+        if prev_id not in used_prev_ids and prev_data.get("confirmed", False):
+            # note: unconfirmed clusters are dropped immediately if they are not rematched all the required frames in a row
             prev_data["frames_since_seen"] += 1
+            # keep unmatched clusters that are not due for deletion
             if prev_data["frames_since_seen"] < retain_frames:
                 updated_cluster_state[prev_id] = prev_data
                 if prev_data.get("confirmed", False):
@@ -254,12 +275,15 @@ def track_moving_clusters(
                     })
             else:
                 expired_ids.append(prev_id)
-                log_warn(f"[detect clusters] Cluster DROPPED id={prev_id}")
+                if prev_data.get("confirmed", False):
+                    log_warn(f"[track-clusters] Cluster DROPPED id={prev_id}")
+                else:
+                    log_debug(f"[track-clusters] Cluster dropped (unconfirmed) id={prev_id}")
 
     # === Finalize and update ===
     track_moving_clusters.last_clusters = updated_cluster_state
     retained_count = len([r for r in results if r["status"] == "retained"])
-    log_info(f"[detect clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {retained_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
+    log_info(f"[track-clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {retained_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
 
     if status_cache:
         status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", str(len(results)))
