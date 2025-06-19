@@ -4,8 +4,9 @@ import numpy as np
 from scipy.spatial import cKDTree
 import time
 import json
+import hashlib
 
-from utils import log_info, log_warn, log_debug
+from utils import log_info, log_warn, log_debug, log_error
 import config
 
 
@@ -82,7 +83,7 @@ def initialize_visualizer(
 
     # Clear polygon again
     visualizer.clear_geometries()
-    time.sleep(2)
+    #time.sleep(2)
 
     return visualizer
 
@@ -314,64 +315,73 @@ def remove_near_duplicates(raw, filtered, threshold=0.001):
 
 
 # Map visualizer ID -> pointcloud objects and state (replace global variables for use with multiple visualizer windows)
-_visualizer_objects = {}
-def visualize_dual_frame(raw_points, filtered_points, visualizer):
+
+_visualizer_objects = {}  # global cache: vis_id -> {pcd_raw, pcd_filtered, added}
+
+def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer):
     """
-    Visualizes two point clouds in Open3D:
-    - raw_points = gray
-    - filtered_points = red
-    Ensures overlapping points are drawn correctly.
+    Efficiently visualizes pointcloud1 (gray) and pointcloud2 (red) in Open3D.
+    Avoids per-frame geometry recreation (performance gain).
+    Supports multiple visualizers via internal tracking.
 
     Args:
-        raw_points (np.ndarray): Raw point cloud (Nx3)
-        filtered_points (np.ndarray): Processed cloud (Nx3)
-        visualizer (Visualizer): Open3D window
+        pointcloid1_gray (np.ndarray): Raw point cloud (Nx3)
+        pointcloud2_dominant_red (np.ndarray): Processed point cloud (Nx3)
+        visualizer (open3d.visualization.Visualizer): Visualizer instance
     """
-    if raw_points.size == 0 and filtered_points.size == 0:
-        log_warn("Both frames empty, skipping visualization.")
+    if visualizer is None or (pointcloid1_gray.size == 0 and pointcloud2_dominant_red.size == 0):
+        log_warn("No visualizer or both frames empty, skipping visualization.")
         return
 
-    # Automatically slice down to 3D if needed
-    if raw_points.ndim == 2 and raw_points.shape[1] > 3:
-        raw_points = raw_points[:, :3]
-    if filtered_points.ndim == 2 and filtered_points.shape[1] > 3:
-        filtered_points = filtered_points[:, :3]
+    # Slice to XYZ
+    if pointcloid1_gray.ndim == 2 and pointcloid1_gray.shape[1] > 3:
+        pointcloid1_gray = pointcloid1_gray[:, :3]
+    if pointcloud2_dominant_red.ndim == 2 and pointcloud2_dominant_red.shape[1] > 3:
+        pointcloud2_dominant_red = pointcloud2_dominant_red[:, :3]
 
-    # if both pointclouds are provided, remove equal points from raw_points cloud so filtered_points are always visible (draw order seems random, sometimes red points not visible at all)
-    if raw_points.size > 0 and filtered_points.size > 0:
-        # Remove raw points that are exactly in filtered_points
-        #raw_points = remove_exact_duplicates(raw_points, filtered_points) # this is very inefficient (cpu >100%)
-        raw_points = remove_near_duplicates(raw_points, filtered_points)
+    # Remove near duplicates (optional but keeps visibility)
+    if pointcloid1_gray.size > 0 and pointcloud2_dominant_red.size > 0:
+        pointcloid1_gray = remove_near_duplicates(pointcloid1_gray, pointcloud2_dominant_red)
 
+    # determine which visualizer/window is used to use the correct cache
     vis_id = id(visualizer)
+
+    # First time init per visualizer -> create cached structure
     if vis_id not in _visualizer_objects:
+        log_info("visualize_dual_frame: Creating object for tracking visualizer/window id={vis_id}")
         _visualizer_objects[vis_id] = {
             "pcd_raw": o3d.geometry.PointCloud(),
             "pcd_filtered": o3d.geometry.PointCloud(),
-            "geometry_added": False
+            "added": False
         }
 
     state = _visualizer_objects[vis_id]
-    pcd_raw = state["pcd_raw"]
-    pcd_filtered = state["pcd_filtered"]
 
-    if raw_points.size > 0:
-        pcd_raw.points = o3d.utility.Vector3dVector(raw_points.astype(np.float64))
-        pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])
-        visualizer.update_geometry(pcd_raw)
+    # Update geometry with new points
+    if pointcloid1_gray.size > 0:
+        state["pcd_raw"].points = o3d.utility.Vector3dVector(pointcloid1_gray.astype(np.float64))
+        state["pcd_raw"].paint_uniform_color([0.8, 0.8, 0.8])
 
-    if filtered_points.size > 0:
-        pcd_filtered.points = o3d.utility.Vector3dVector(filtered_points.astype(np.float64))
-        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
-        visualizer.update_geometry(pcd_filtered)
+    if pointcloud2_dominant_red.size > 0:
+        state["pcd_filtered"].points = o3d.utility.Vector3dVector(pointcloud2_dominant_red.astype(np.float64))
+        state["pcd_filtered"].paint_uniform_color([1.0, 0.0, 0.0])
 
-    if not state["geometry_added"]:
-        visualizer.add_geometry(pcd_raw, reset_bounding_box=False)
-        visualizer.add_geometry(pcd_filtered, reset_bounding_box=False)
-        state["geometry_added"] = True
+    # Add geometry only once
+    if not state["added"]:
+        log_info("visualize_dual_frame: visualizer={vis_id} initially adding 2x pointcloud geometry")
+        visualizer.add_geometry(state["pcd_raw"], reset_bounding_box=False)
+        visualizer.add_geometry(state["pcd_filtered"], reset_bounding_box=False)
+        state["added"] = True
+
+    # Always update visuals
+    if pointcloid1_gray.size > 0:
+        visualizer.update_geometry(state["pcd_raw"])
+    if pointcloud2_dominant_red.size > 0:
+        visualizer.update_geometry(state["pcd_filtered"])
 
     visualizer.poll_events()
     visualizer.update_renderer()
+
 
 
 
@@ -463,15 +473,46 @@ def draw_bounding_boxes(clusters, visualizer):
 
 
 
+
+_drawn_polygons_cache = {}  # vis_id → set of polygon hashes
+
 def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2), fit_camera_to_data=False):
     """
-    Draws a polygon as lines on the scene.
+    Draws a polygon as lines on the scene, only once per visualizer.
+    Prevents duplicate geometries which slow down Open3D rendering over time.
     """
+    if visualizer is None or not polygon_xy:
+        log_error("draw_2d_polygon: no visualizer or polygon provided")
+        return
+
+    vis_id = id(visualizer)
+    # create cached object for this visualizer if not existing
+    if vis_id not in _drawn_polygons_cache:
+        _drawn_polygons_cache[vis_id] = set()
+
+    # hash polygon details to compare later if already existing
+    polygon_hash = hashlib.md5(
+        np.round(np.array(polygon_xy, dtype=np.float32), 6).tobytes() + 
+        bytes(np.round(np.array(color, dtype=np.float32), 4))
+    ).hexdigest()
+    if polygon_hash in _drawn_polygons_cache[vis_id]:
+        return  # Already drawn
+
+
+    # Convert to 3D and create LineSet
     poly_3d = [(x, y, 0.0) for x, y in polygon_xy] + [(polygon_xy[0][0], polygon_xy[0][1], 0.0)]
     lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
 
+    log_info(f"draw_2d_polygon: Adding new polygon to visualizer (hash:{polygon_hash})")
     line_set = o3d.geometry.LineSet()
     line_set.points = o3d.utility.Vector3dVector(poly_3d)
     line_set.lines = o3d.utility.Vector2iVector(lines)
     line_set.paint_uniform_color(color)
-    visualizer.add_geometry(line_set, reset_bounding_box=fit_camera_to_data)
+
+    try:
+        visualizer.add_geometry(line_set, reset_bounding_box=fit_camera_to_data)
+        _drawn_polygons_cache[vis_id].add(polygon_hash)
+        visualizer.poll_events()
+        visualizer.update_renderer()
+    except Exception as e:
+        log_error(f"[draw_2d_polygon] Failed to add geometry: {e}")

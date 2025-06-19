@@ -1,13 +1,14 @@
 import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
+from collections import deque
+import time
 
 from config import COUNT_PEOPLE_ENABLED, COUNT_PEOPLE_DRAW_BOXES, MODE_SECOND_DATA_SET, CROP_POINTCLOUD_POLYGON, CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER, POINTCLOUD_HISTORY_BUFFER_SIZE, PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON
 from utils import log_info, log_warn, log_debug, serialize_numpy_array
 from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_boxes
 from filters import apply_highpass_filter, remove_isolated_points, crop_points_within_xy_polygon
 from people_detection import estimate_moving_people, detect_moving_clusters, track_room_occupancy
-from collections import deque
 
 
 # === Rolling buffer for motion filtering ===
@@ -42,6 +43,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
 
     # TODO: Optimize the selected filter combination configuration (more general approach to chain them)
     # Select transformation/filter mode
+    t1 = time.time()
     if MODE_SECOND_DATA_SET == "OLDEST":
         filtered_frame = pointcloud_history_buffer[0]  # Use oldest frame directly
         #log_info("Visualizing oldest frame (baseline).")
@@ -64,8 +66,10 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     else:
         log_warn(f"Invalid MODE_SECOND_DATA_SET: {MODE_SECOND_DATA_SET}")
         return
+    status_cache.update_status_key("TIMING_MOTION_DETECTION__APPLY_FILTERS", f"{(time.time() - t1)*1000:.0f} ms", trigger_file_update=False)
 
     # === Update cached pointcloud that is sent to dashboard via TCP ===
+    t2 = time.time()
     status_cache.update_dashboard_key("pointcloud_highpass_denoised_numpyarray", filtered_frame)
 
     import open3d as o3d
@@ -86,6 +90,9 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     # Optional: Count moving people via DBSCAN
     if COUNT_PEOPLE_ENABLED:
         clusters = detect_moving_clusters(filtered_frame, distance_threshold=0.5, min_points=60, max_points=4000, status_cache=status_cache)
+        status_cache.update_status_key("TIMING_MOTION_DETECTION__CLUSTER_DETECTION", f"{(time.time() - t2)*1000:.0f} ms", trigger_file_update=False)
+
+        t3 = time.time()
         if visualizer is not None:
             draw_bounding_boxes(clusters, visualizer)
             draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
@@ -111,6 +118,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     # Visualize both point clouds
     if visualizer is not None:
         visualize_dual_frame(latest_frame, filtered_frame, visualizer)
+        status_cache.update_status_key("TIMING_MOTION_DETECTION__VISUALIZER_UPDATE", f"{(time.time() - t3)*1000:.0f} ms", trigger_file_update=False)
 
 
 
