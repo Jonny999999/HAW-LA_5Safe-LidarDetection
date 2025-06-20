@@ -11,6 +11,9 @@ from filters import apply_highpass_filter, remove_isolated_points, crop_points_w
 from people_detection import estimate_moving_people, track_moving_clusters, track_room_occupancy
 
 
+# cache for cluster tracking
+fast_cluster_detection_cache = {}
+
 # === Rolling buffer for motion filtering ===
 # Used for highpass, temporal denoise, clustering
 # This stores the *XYZ arrays* (after [:, :3])
@@ -89,17 +92,53 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
 
     if COUNT_PEOPLE_ENABLED:
         # advanced tracking of moving clusters
-        clusters = track_moving_clusters(filtered_frame, status_cache=status_cache) #using default detection thresholds (see definition)
+        # slow detection to be sure, long retain
+        tracked_clusters_precise = track_moving_clusters(
+            filtered_frame,
+            status_cache=status_cache,
+            cluster_cache=None,
+            distance_threshold=0.5, # points within that radius are merged as one cluster
+            min_points=70, # min points in a cluster to considered as potential cluster/movement at all
+            max_moving_points_ignore_frame=4000, # ignore entire frame if e.g. sensor moved
+            min_z_height=0.5, # initial detection threshold
+            min_volume_m3=0.2, # initial detection threshold
+            min_frames_to_confirm=12, # frame count the initial thresholds have to be fulfilled to be added as cluster
+            retain_frames=100, # at 5fps
+            match_threshold=1.2, # distance of cluster center from old to new one to be detected as a match
+            enable_logging=True,
+        ) #using default detection thresholds (see definition)
+
+
+        # second instance of people/cluster detection
+        # fast detection fast forget -> detected clusters only used for counting people entering/leaving thus needs to be quicker
+        global fast_cluster_detection_cache
+        tracked_clusters_fast = track_moving_clusters(
+            filtered_frame,
+            cluster_cache=fast_cluster_detection_cache,
+            distance_threshold=0.2, # points within that radius are merged as one cluster
+            min_points=60, # min points in a cluster to considered as potential cluster/movement at all
+            max_moving_points_ignore_frame=4000, # ignore entire frame if e.g. sensor moved
+            min_z_height=0.5, # initial detection threshold
+            min_volume_m3=0.2, # initial detection threshold
+            min_frames_to_confirm=3, # frame count the initial thresholds have to be fulfilled to be added as cluster
+            status_cache=None,
+            retain_frames=5, # at 5fps
+            match_threshold=0.6, # distance of cluster center from old to new one to be detected as a match
+            enable_logging=False,
+        ) #using default detection thresholds (see definition)
         status_cache.update_status_key("TIMING_MOTION_DETECTION__CLUSTER_DETECTION", f"{(time.time() - t2)*1000:.0f} ms", trigger_file_update=False)
 
         t3 = time.time()
         if visualizer is not None:
-            draw_cluster_boxes(clusters, visualizer)
+            #=== draw clusters ===
+            draw_cluster_boxes(tracked_clusters_fast, visualizer)
             draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
 
-            # count people entering and leaving the room
-            people_inside = track_room_occupancy(
-            clusters,
+        #=== count people leaving/entering ===
+        # count people entering and leaving the room
+        people_inside = track_room_occupancy(
+            #tracked_clusters_fast,
+            tracked_clusters_precise,
             polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON,
             history_buffer=None,
             status_cache=status_cache,
@@ -109,7 +148,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         #print(f"Cluster type: {type(clusters[0])}, content: {clusters[0]}")
         status_cache.update_dashboard_key(
             "moving_people_clusters_arrayofserializednumpyarrays",
-            [serialize_numpy_array(cluster["pcd"].points) for cluster in clusters]
+            [serialize_numpy_array(cluster["pcd"].points) for cluster in tracked_clusters_precise]
         )
 
         ## old people estimation TODO: drop this
