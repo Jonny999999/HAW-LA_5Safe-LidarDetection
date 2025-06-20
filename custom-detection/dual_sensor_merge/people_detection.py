@@ -235,28 +235,39 @@ def track_moving_clusters(
                 })
                 if not was_confirmed:
                     log_warn(f"[track-clusters] Cluster CONFIRMED id={best_id}")
-        else: # no match found
-            new_id = track_moving_clusters.cluster_id_counter
-            track_moving_clusters.cluster_id_counter += 1
-            new_id_count += 1
 
-            updated_cluster_state[new_id] = {
-                "centroid": cluster["centroid"],
-                "pcd": cluster["pcd"],
-                "bbox": cluster["bbox"],
-                "frames_since_seen": 0,
-                "frames_observed": 1,
-                "confirmed": False,
-                "volume": cluster["volume"],
-                "z_range": cluster["z_range"]
-            }
+        else: # no match found -> new cluster detected
+            passes_volume = cluster["volume"] >= min_volume_m3
+            passes_height = cluster["z_range"] >= min_z_height
+            if passes_volume and passes_height:
+                new_id = track_moving_clusters.cluster_id_counter
+                track_moving_clusters.cluster_id_counter += 1
+                new_id_count += 1
+                updated_cluster_state[new_id] = {
+                    "centroid": cluster["centroid"],
+                    "pcd": cluster["pcd"],
+                    "bbox": cluster["bbox"],
+                    "frames_since_seen": 0,
+                    "frames_observed": 1,
+                    "confirmed": False,
+                    "volume": cluster["volume"],
+                    "z_range": cluster["z_range"]
+                }
 
-            results.append({
-                "id": new_id,
-                "centroid": cluster["centroid"],
-                "pcd": cluster["pcd"],
-                "status": "first-detected-or-not-meeting-criteria"
-            })
+                results.append({
+                    "id": new_id,
+                    "centroid": cluster["centroid"],
+                    "pcd": cluster["pcd"],
+                    "status": "pending-confirmation"
+                })
+
+            else: # newly detected but does not meet requirements -> dont track, visualize only
+                results.append({
+                    "id": -1, # id has no meaning since its not tracked in any way
+                    "centroid": cluster["centroid"],
+                    "pcd": cluster["pcd"],
+                    "status": "detected-but-not-meeting-criteria"
+                })
 
     # === Handle unmatched previous clusters ===
     for prev_id, prev_data in track_moving_clusters.last_clusters.items():

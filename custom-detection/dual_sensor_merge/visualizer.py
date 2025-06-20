@@ -448,7 +448,7 @@ def draw_cluster_boxes(clusters, visualizer):
         "retained":             {"color": (0.0, 0.0, 1.0), "thick": True},   # blue
         "matched":              {"color": (1.0, 0.8, 0.0), "thick": True},   # orange-yellow (case not possible)
         "pending-confirmation": {"color": (0.0, 0.0, 0.0), "thick": True},  # black
-        "first-detected-or-not-meeting-critera": {"color": (0.5, 0.5, 0.5), "thick": False},   # gray
+        "detected-but-not-meeting-critera": {"color": (0.5, 0.5, 0.5), "thick": False},   # gray
         "unknown":              {"color": (0.5, 0.5, 0.5), "thick": False}   # gray
     }
 
