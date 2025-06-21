@@ -131,7 +131,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         t3 = time.time()
         if visualizer is not None:
             #=== draw clusters ===
-            draw_cluster_boxes(tracked_clusters_fast, visualizer)
+            draw_cluster_boxes(tracked_clusters_precise, visualizer)
             draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
 
         #=== count people leaving/entering ===

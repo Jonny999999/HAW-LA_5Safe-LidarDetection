@@ -529,10 +529,19 @@ def draw_bounding_box(
         # Enlarge box to min volume
         if min_volume_m3 > 0 and volume < min_volume_m3:
             center = bbox.get_center()
-            half_size = (min_volume_m3 ** (1/3)) / 2
+            ## create cube box 1:1:1 aspect ratio
+            ##half_size = (min_volume_m3 ** (1/3)) / 2
+            ##bbox = o3d.geometry.AxisAlignedBoundingBox(
+            ##    min_bound=(center[0] - half_size, center[1] - half_size, center[2] - half_size),
+            ##    max_bound=(center[0] + half_size, center[1] + half_size, center[2] + half_size)
+            ##)
+            # create taller box with 1:1:3 aspect ratio (x:y:z)
+            base_size = (min_volume_m3 / 3.0) ** (1/3)  # square base, taller z
+            half_xy = base_size / 2
+            half_z = (3.0 * base_size) / 2
             bbox = o3d.geometry.AxisAlignedBoundingBox(
-                min_bound=(center[0] - half_size, center[1] - half_size, center[2] - half_size),
-                max_bound=(center[0] + half_size, center[1] + half_size, center[2] + half_size)
+                min_bound=(center[0] - half_xy, center[1] - half_xy, center[2] - half_z),
+                max_bound=(center[0] + half_xy, center[1] + half_xy, center[2] + half_z)
             )
 
         # Either draw once or multiple times with small offsets

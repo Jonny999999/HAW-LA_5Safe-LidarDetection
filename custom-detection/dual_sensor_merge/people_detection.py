@@ -97,6 +97,8 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30,
 
 
 def track_moving_clusters(
+    # NOTE: DEFAULT PARAMATERS ARE NOT USED -> no effect changing here
+    #       (currently the parameters are overwritten at function call in processor.py)
     pointcloud_np,
     cluster_cache=None, # optionally provide custom cache object to not use internal one (useful when having another instance of detecting clusters with different parameters)
     distance_threshold=0.5, # points within that radius are merged as one cluster
@@ -313,13 +315,17 @@ def track_moving_clusters(
         track_moving_clusters.last_clusters = updated_cluster_state
         track_moving_clusters.cluster_id_counter = cluster_id_counter
 
-    retained_count = len([r for r in results if r["status"] == "retained"])
+    # === Statistics / logging ===
+    #total_clusters = sum(1 for r in results if r["status"] in ("confirmed", "retained"))
+    matched_moving_clusters_count = sum(1 for r in results if r["status"] in ("confirmed"))
+    matched_retained_clusters_count = sum(1 for r in results if r["status"] in ("retained"))
+    tracked_confirmed_clusters_count = matched_moving_clusters_count + matched_retained_clusters_count
     if enable_logging:
-        log_info(f"[track-clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {retained_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
+        log_info(f"[track-clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {matched_retained_clusters_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
 
     if status_cache:
-        status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", str(len(results)))
-        status_cache.update_status_key("DETECTION_MOVING_PEOPLE", str(reused_id_count + new_id_count))
+        status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", str(tracked_confirmed_clusters_count))
+        status_cache.update_status_key("DETECTION_MOVING_PEOPLE", str(matched_moving_clusters_count))
 
     return results
 
