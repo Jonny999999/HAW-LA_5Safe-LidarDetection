@@ -27,7 +27,7 @@ while true; do
     PY_PID=$!
 
     # Wait a bit to ensure the GUI starts
-    sleep 5
+    sleep 9
 
     # Launch terminal with monitoring script
     cd "$TERMINAL_FOLDER"

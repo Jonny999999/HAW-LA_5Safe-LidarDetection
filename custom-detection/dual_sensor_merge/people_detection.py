@@ -385,8 +385,9 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
             draw_2d_polygon(list(inner_poly.exterior.coords), visualizer, color=(0.2, 0.8, 0.2))  # green
 
     # Sort cluster tuples into dictionary by ID
-    #cluster_dict = {cid: centroid for (cid, centroid, _) in clusters}
-    cluster_dict = {c["id"]: c["centroid"] for c in clusters}
+    # also ignore clusters with id=-1 (marks detected but unconfirmed clusters)
+    cluster_dict = {c["id"]: c["centroid"] for c in clusters if c["id"] != -1} 
+    #cluster_dict = {c["id"]: c["centroid"] for c in clusters}
     log_debug(f"[track_room_occupancy] Current cluster IDs: {list(cluster_dict.keys())}")
 
     # Append this frame's centroids to history buffer (as dict of cid → position)
