@@ -13,12 +13,40 @@ TERMINAL_SCRIPT="./scripts/watch_status_json_file.sh"
 
 export DISPLAY=:0  # Needed for GUI and xterm
 
+
+
+# === Identify and kill previous running instances of this script ===
+CURRENT_PID=$$
+CURRENT_NAME=$(basename "$0")
+#echo "[DEBUG] Current PID: $CURRENT_PID"
+#echo "[DEBUG] Current script name: $CURRENT_NAME"
+#echo "[DEBUG] Searching for other matching bash scripts..."
+
+# List all bash processes that include this script name (excluding this one)
+MATCHES=$(ps -eo pid,cmd | grep "[b]ash .*${CURRENT_NAME}" | grep -v "$CURRENT_PID" || true)
+#echo "[DEBUG] Matching processes:"
+#echo "$MATCHES"
+
+# Extract PIDs to kill
+PIDS_TO_KILL=$(echo "$MATCHES" | awk '{print $1}')
+
+for pid in $PIDS_TO_KILL; do
+    echo "================================================================="
+    echo "[Auto-Restart] Killing previous bash script instance (PID=$pid)"
+    echo "================================================================="
+    kill "$pid" 2>/dev/null
+done
+
+
+
 # Clean up old processes
 killall python3.10 2>/dev/null
 killall xterm 2>/dev/null
 
 while true; do
+    echo "======================================"
     echo "[Auto-Restart] Starting Python GUI..."
+    echo "======================================"
 
     cd "$PYTHON_SCRIPT_FOLDER"
 
@@ -27,8 +55,11 @@ while true; do
     PY_PID=$!
 
     # Wait a bit to ensure the GUI starts
-    sleep 9
+    sleep 10
 
+    echo "===================================================="
+    echo "[Auto-Restart] Starting xterm showing status.json..."
+    echo "===================================================="
     # Launch terminal with monitoring script
     cd "$TERMINAL_FOLDER"
     xterm -geometry 51x20 \
