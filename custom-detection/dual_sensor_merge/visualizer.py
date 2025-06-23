@@ -2,20 +2,158 @@ import numpy as np
 import open3d as o3d
 import numpy as np
 from scipy.spatial import cKDTree
+import time
+import json
+import hashlib
 
-from utils import log_info, log_warn, log_debug
+from utils import log_info, log_warn, log_debug, log_error
 import config
 
 
 visualizer_instances = {}
 visualizer_modes = {}
 
+#########################
+######## CONFIG #########
+#########################
+VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
+VISUALIZER_DEFAULT_WINDOW_HEIGHT = 2160
+CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED = True
+VISUALIZER_DEFAULT_CAMERA_POSITION = {
+  "intrinsic": {
+    "width": 1914,
+    "height": 1137,
+    "fx": 984.6708841029068,
+    "fy": 984.6708841029068,
+    "cx": 956.5,
+    "cy": 568.0
+  },
+  "extrinsic": [
+    [
+      -0.6730622953428582,
+      -0.7351171121348872,
+      0.08117867967802239,
+      -0.8071571641729453
+    ],
+    [
+      -0.6322851327318026,
+      0.5149955914727914,
+      -0.5787875704348846,
+      3.20865146732323
+    ],
+    [
+      0.38366998516189654,
+      -0.44088816292803046,
+      -0.8114277357077564,
+      4.39508800354559
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ]
+} 
 
-def initialize_visualizer(title="LiDAR Viewer", width=1280, height=720):
+
+def initialize_visualizer(
+    title="LiDAR Viewer", 
+    width=VISUALIZER_DEFAULT_WINDOW_WIDTH, 
+    height=VISUALIZER_DEFAULT_WINDOW_HEIGHT):
     log_info(f"Initializing visualizer: {title}")
     visualizer = o3d.visualization.Visualizer()
     visualizer.create_window(window_name=title, width=width, height=height)
+
+    # Draw polygon 
+    # (temporary, we need any object present to be able to adjust the camera..)
+    if config.PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON:
+        draw_2d_polygon(config.PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, fit_camera_to_data=True)
+
+    # Let Open3D render one frame (so internal bounding box is set)
+    visualizer.poll_events()
+    visualizer.update_renderer()
+
+    # apply configured camera position
+    if (CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED):
+        apply_camera_parameters(visualizer, VISUALIZER_DEFAULT_CAMERA_POSITION)
+
+    # === uncomment this to create/get the camera position for VISUALIZER_DEFAULT_CAMERA_POSITION ===
+    # pause and manually select the camera position to update the configuration
+    #time.sleep(1)
+    #adjust_and_dump_camera(visualizer)
+
+    # Clear polygon again
+    visualizer.clear_geometries()
+    #time.sleep(2)
+
     return visualizer
+
+
+
+
+
+def apply_camera_parameters(visualizer, cam_data):
+    """
+    Applies previously saved camera parameters to a visualizer using current window intrinsics
+    and the provided extrinsic matrix.
+    Note: the cam_data can be obtained with calline adjust_and_dump_camera  durin init (uncomment that line)
+
+    Args:
+        visualizer (o3d.visualization.Visualizer): The visualizer instance.
+        cam_data (dict): Must contain the "extrinsic" key.
+    """
+    ctr = visualizer.get_view_control()
+
+    # Start with current camera parameters to get valid intrinsic
+    current_params = ctr.convert_to_pinhole_camera_parameters()
+    current_params.extrinsic = np.array(cam_data["extrinsic"])
+
+    # Apply updated camera parameters
+    ctr.convert_from_pinhole_camera_parameters(current_params)
+    visualizer.poll_events()
+    visualizer.update_renderer()
+
+
+
+
+
+
+def adjust_and_dump_camera(visualizer, duration_sec=10):
+    """
+    Allows manual camera adjustment for a few seconds and then logs the camera parameters.
+    
+    Args:
+        visualizer (open3d.visualization.Visualizer): Existing visualizer instance.
+        duration_sec (int): Duration in seconds to keep updating the window for camera adjustment.
+    """
+    print("==== CAMERA POSITION SELECTOR =====")
+    print("You have 10 seconds time to adjust the camera, then the data will be dumped")
+    start = time.time()
+    while time.time() - start < duration_sec:
+        visualizer.poll_events()
+        visualizer.update_renderer()
+        time.sleep(0.01)  # small sleep to avoid CPU spinning
+
+    # Extract and dump camera parameters
+    ctr = visualizer.get_view_control()
+    params = ctr.convert_to_pinhole_camera_parameters()
+    cam_json = {
+        "intrinsic": {
+            "width": params.intrinsic.width,
+            "height": params.intrinsic.height,
+            "fx": params.intrinsic.get_focal_length()[0],
+            "fy": params.intrinsic.get_focal_length()[1],
+            "cx": params.intrinsic.get_principal_point()[0],
+            "cy": params.intrinsic.get_principal_point()[1],
+        },
+        "extrinsic": params.extrinsic.tolist()
+    }
+
+    print("\n[Camera Dump] === Copy and paste into code ===")
+    print(json.dumps(cam_json, indent=2))
+
+
 
 
 def create_window_if_needed(mode, window_title_prefix):
@@ -71,7 +209,7 @@ def update_visualizer_by_mode(mode, context):
     """
     vis = get_visualizer_by_mode(mode)
     if mode == "none" or vis is None:
-        print("[update_visuzlier_by_mode] no vis assigned to this mode")
+        log_debug("[update_visuzlier_by_mode] no vis assigned to this mode")
         return
 
     if mode == "sensor1":
@@ -88,7 +226,7 @@ def update_visualizer_by_mode(mode, context):
 
     elif mode == "motion_detection":
         # Do not render here — handled externally
-        return
+        pass
 
     else:
         log_warn(f"[visualizer] Unknown visualization mode: {mode}")
@@ -115,13 +253,14 @@ def visualize_single_frame(points, visualizer, pcd_ref, color):
         return
 
     pcd_ref.points = o3d.utility.Vector3dVector(points.astype(np.float64))
+
     pcd_ref.paint_uniform_color(color)
     visualizer.update_geometry(pcd_ref)
 
     # on first use only: add to scene
     pid = id(pcd_ref)
     if pid not in _added_pcds:
-        visualizer.add_geometry(pcd_ref)
+        visualizer.add_geometry(pcd_ref, reset_bounding_box=False)
         _added_pcds.add(pid)
 
     visualizer.poll_events()
@@ -179,64 +318,71 @@ def remove_near_duplicates(raw, filtered, threshold=0.001):
 
 
 # Map visualizer ID -> pointcloud objects and state (replace global variables for use with multiple visualizer windows)
-_visualizer_objects = {}
-def visualize_dual_frame(raw_points, filtered_points, visualizer):
+
+_visualizer_objects = {}  # global cache: vis_id -> {pcd_raw, pcd_filtered, added}
+def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer):
     """
-    Visualizes two point clouds in Open3D:
-    - raw_points = gray
-    - filtered_points = red
-    Ensures overlapping points are drawn correctly.
+    Efficiently visualizes pointcloud1 (gray) and pointcloud2 (red) in Open3D.
+    Avoids per-frame geometry recreation (performance gain).
+    Supports multiple visualizers via internal tracking.
 
     Args:
-        raw_points (np.ndarray): Raw point cloud (Nx3)
-        filtered_points (np.ndarray): Processed cloud (Nx3)
-        visualizer (Visualizer): Open3D window
+        pointcloid1_gray (np.ndarray): Raw point cloud (Nx3)
+        pointcloud2_dominant_red (np.ndarray): Processed point cloud (Nx3)
+        visualizer (open3d.visualization.Visualizer): Visualizer instance
     """
-    if raw_points.size == 0 and filtered_points.size == 0:
-        log_warn("Both frames empty, skipping visualization.")
+    if visualizer is None or (pointcloid1_gray.size == 0 and pointcloud2_dominant_red.size == 0):
+        log_warn("No visualizer or both frames empty, skipping visualization.")
         return
 
-    # Automatically slice down to 3D if needed
-    if raw_points.ndim == 2 and raw_points.shape[1] > 3:
-        raw_points = raw_points[:, :3]
-    if filtered_points.ndim == 2 and filtered_points.shape[1] > 3:
-        filtered_points = filtered_points[:, :3]
+    # Slice to XYZ
+    if pointcloid1_gray.ndim == 2 and pointcloid1_gray.shape[1] > 3:
+        pointcloid1_gray = pointcloid1_gray[:, :3]
+    if pointcloud2_dominant_red.ndim == 2 and pointcloud2_dominant_red.shape[1] > 3:
+        pointcloud2_dominant_red = pointcloud2_dominant_red[:, :3]
 
-    # if both pointclouds are provided, remove equal points from raw_points cloud so filtered_points are always visible (draw order seems random, sometimes red points not visible at all)
-    if raw_points.size > 0 and filtered_points.size > 0:
-        # Remove raw points that are exactly in filtered_points
-        #raw_points = remove_exact_duplicates(raw_points, filtered_points) # this is very inefficient (cpu >100%)
-        raw_points = remove_near_duplicates(raw_points, filtered_points)
+    # Remove near duplicates (optional but keeps visibility)
+    if pointcloid1_gray.size > 0 and pointcloud2_dominant_red.size > 0:
+        pointcloid1_gray = remove_near_duplicates(pointcloid1_gray, pointcloud2_dominant_red)
 
+    # determine which visualizer/window is used to use the correct cache
     vis_id = id(visualizer)
+
+    # First time init per visualizer -> create cached structure
     if vis_id not in _visualizer_objects:
+        log_info("visualize_dual_frame: Creating object for tracking visualizer/window id={vis_id}")
         _visualizer_objects[vis_id] = {
             "pcd_raw": o3d.geometry.PointCloud(),
             "pcd_filtered": o3d.geometry.PointCloud(),
-            "geometry_added": False
+            "added": False
         }
 
     state = _visualizer_objects[vis_id]
-    pcd_raw = state["pcd_raw"]
-    pcd_filtered = state["pcd_filtered"]
 
-    if raw_points.size > 0:
-        pcd_raw.points = o3d.utility.Vector3dVector(raw_points.astype(np.float64))
-        pcd_raw.paint_uniform_color([0.8, 0.8, 0.8])
-        visualizer.update_geometry(pcd_raw)
+    # Update geometry with new points
+    # note: when empty pointcloud was provided, the previous points are cleared
+    state["pcd_raw"].points = o3d.utility.Vector3dVector(pointcloid1_gray.astype(np.float64))
+    state["pcd_raw"].paint_uniform_color([0.8, 0.8, 0.8])
 
-    if filtered_points.size > 0:
-        pcd_filtered.points = o3d.utility.Vector3dVector(filtered_points.astype(np.float64))
-        pcd_filtered.paint_uniform_color([1.0, 0.0, 0.0])
-        visualizer.update_geometry(pcd_filtered)
+    state["pcd_filtered"].points = o3d.utility.Vector3dVector(pointcloud2_dominant_red.astype(np.float64))
+    state["pcd_filtered"].paint_uniform_color([1.0, 0.0, 0.0])
 
-    if not state["geometry_added"]:
-        visualizer.add_geometry(pcd_raw)
-        visualizer.add_geometry(pcd_filtered)
-        state["geometry_added"] = True
+    # Add geometry only once
+    if not state["added"]:
+        log_info("visualize_dual_frame: visualizer={vis_id} initially adding 2x pointcloud geometry")
+        visualizer.add_geometry(state["pcd_raw"], reset_bounding_box=False)
+        visualizer.add_geometry(state["pcd_filtered"], reset_bounding_box=False)
+        state["added"] = True
+
+    # Always update visuals
+    if pointcloid1_gray.size > 0:
+        visualizer.update_geometry(state["pcd_raw"])
+    if pointcloud2_dominant_red.size > 0:
+        visualizer.update_geometry(state["pcd_filtered"])
 
     visualizer.poll_events()
     visualizer.update_renderer()
+
 
 
 
@@ -262,7 +408,7 @@ def pick_point_from_cloud(points, title="Pick Points"):
     vis = o3d.visualization.VisualizerWithEditing()
     vis.create_window()
     # draw pointcloud
-    vis.add_geometry(pc)
+    vis.add_geometry(pc, reset_bounding_box=False)
     # start blocking, user selects points
     vis.run()  # user picks points
     vis.destroy_window()
@@ -285,46 +431,192 @@ def pick_point_from_cloud(points, title="Pick Points"):
 
 
 
-
-
-# ========== VISUALIZATION ==========
-drawn_bounding_boxes = []  # Persistent list of bounding box geometries
-def draw_bounding_boxes(clusters, visualizer, color=(0.0, 0.0, 0.5)):
+def draw_cluster_boxes(clusters, visualizer):
     """
-    Draws bounding boxes around clusters.
+    Draws bounding boxes around clusters with color-coded status and optional thick line rendering.
 
     Args:
-        clusters: list of (centroid, o3d.geometry.PointCloud)
-        visualizer: Open3D visualizer
-        color: RGB tuple
+        clusters (List[Dict]): Output from detect_moving_clusters()
+        visualizer (Visualizer): Open3D visualizer
     """
-    global drawn_bounding_boxes
+    if visualizer is None:
+        return
 
-    # Clear previous
-    for box in drawn_bounding_boxes:
-        visualizer.remove_geometry(box, reset_bounding_box=False)
-    drawn_bounding_boxes.clear()
+    # Status styles → RGB + whether to draw thicker lines
+    status_styles = {
+        "confirmed":            {"color": (0.0, 1.0, 0.0), "thick": True},   # green
+        "retained":             {"color": (0.0, 0.0, 1.0), "thick": True},   # blue
+        "matched":              {"color": (1.0, 0.8, 0.0), "thick": True},   # orange-yellow (case not possible)
+        "pending-confirmation": {"color": (0.0, 0.0, 0.0), "thick": True},  # black
+        "detected-but-not-meeting-critera": {"color": (0.5, 0.5, 0.5), "thick": False},   # gray
+        "unknown":              {"color": (0.5, 0.5, 0.5), "thick": False}   # gray
+    }
 
-    # Draw new
-    for _, cluster in clusters:
-        bbox = cluster.get_axis_aligned_bounding_box()
-        bbox.color = color
-        visualizer.add_geometry(bbox, reset_bounding_box=False)
-        drawn_bounding_boxes.append(bbox)
+    # Clear existing boxes (reset visualizer)
+    draw_bounding_box(None, visualizer, clear_existing=True, render_now=False)
+
+    # Draw one box per cluster
+    for cluster in clusters:
+        status = cluster.get("status", "unknown")
+        style = status_styles.get(status, status_styles["unknown"])
+
+        draw_bounding_box(
+            cluster["pcd"],
+            visualizer,
+            color=style["color"],
+            min_volume_m3=0.1,
+            thick_lines_enabled=style["thick"],
+            thickness_hack_layer_offset=0.01,
+            thickness_hack_layer_count=3,
+            clear_existing=False,
+            render_now=False
+        )
+
+    # Final update once
+    visualizer.poll_events()
+    visualizer.update_renderer()
 
 
 
 
 
-def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2)):
+drawn_bounding_boxes = []  # Global cache of drawn box objects
+def draw_bounding_box(
+    pcd,
+    visualizer,
+    color=(0.0, 0.8, 0.8),
+    min_volume_m3=0.0,
+    clear_existing=False,
+    render_now=True,
+    thick_lines_enabled=False,
+    thickness_hack_layer_offset=0.01,
+    thickness_hack_layer_count=3
+):
     """
-    Draws a polygon as lines on the scene.
+    Draws a bounding box around a point cloud in Open3D and tracks drawn objects to prevent buildup.
+    Optionally simulates thicker lines by drawing multiple offset boxes.
+
+    Args:
+        pcd (PointCloud or None): Cluster point cloud. If None and clear_existing is True, only clears.
+        visualizer (Visualizer): The Open3D visualizer instance.
+        color (tuple): RGB tuple for box color.
+        min_volume_m3 (float): If box is smaller than this, enlarge it around the centroid.
+        clear_existing (bool): Whether to clear all previously drawn boxes.
+        render_now (bool): Whether to update the visualizer immediately (set False if drawing multiple boxes).
+        thick_lines_enabled (bool): If True, draws multiple offset boxes to fake thicker lines.
+        thickness_hack_layer_offset (float): Size of offset in meters for each fake thickness layer.
+        thickness_hack_layer_count (int): Number of offset layers (3 = center + 2 more)
     """
+    import open3d as o3d
+
+    if visualizer is None:
+        return
+
+    # === Clear all previously drawn boxes ===
+    if clear_existing:
+        for box in drawn_bounding_boxes:
+            try:
+                visualizer.remove_geometry(box, reset_bounding_box=False)
+            except Exception as e:
+                log_warn(f"[draw_bounding_boxes] Failed to remove box: {e}")
+        drawn_bounding_boxes.clear()
+
+    # === Draw new box (if point cloud provided) ===
+    if pcd is not None:
+        bbox = pcd.get_axis_aligned_bounding_box()
+        volume = bbox.volume()
+
+        # Enlarge box to min volume
+        if min_volume_m3 > 0 and volume < min_volume_m3:
+            center = bbox.get_center()
+            ## create cube box 1:1:1 aspect ratio
+            ##half_size = (min_volume_m3 ** (1/3)) / 2
+            ##bbox = o3d.geometry.AxisAlignedBoundingBox(
+            ##    min_bound=(center[0] - half_size, center[1] - half_size, center[2] - half_size),
+            ##    max_bound=(center[0] + half_size, center[1] + half_size, center[2] + half_size)
+            ##)
+            # create taller box with 1:1:3 aspect ratio (x:y:z)
+            base_size = (min_volume_m3 / 3.0) ** (1/3)  # square base, taller z
+            half_xy = base_size / 2
+            half_z = (3.0 * base_size) / 2
+            bbox = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=(center[0] - half_xy, center[1] - half_xy, center[2] - half_z),
+                max_bound=(center[0] + half_xy, center[1] + half_xy, center[2] + half_z)
+            )
+
+        # Either draw once or multiple times with small offsets
+        boxes_to_draw = []
+
+        if thick_lines_enabled:
+            center = bbox.get_center()
+            extents = bbox.get_extent()
+
+            # Create multiple slightly scaled versions around center
+            for i in range(-thickness_hack_layer_count//2, thickness_hack_layer_count//2 + 1):
+                scale = 1.0 + i * thickness_hack_layer_offset
+                half_ext = 0.5 * extents * scale
+                min_bound = center - half_ext
+                max_bound = center + half_ext
+                hack_box = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
+                hack_box.color = color
+                boxes_to_draw.append(hack_box)
+        else:
+            bbox.color = color
+            boxes_to_draw.append(bbox)
+
+        # Add to visualizer and cache
+        for box in boxes_to_draw:
+            visualizer.add_geometry(box, reset_bounding_box=False)
+            drawn_bounding_boxes.append(box)
+
+    # === Final visualizer update if requested ===
+    if render_now:
+        visualizer.poll_events()
+        visualizer.update_renderer()
+
+
+
+
+
+_drawn_polygons_cache = {}  # vis_id → set of polygon hashes
+
+def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2), fit_camera_to_data=False):
+    """
+    Draws a polygon as lines on the scene, only once per visualizer.
+    Prevents duplicate geometries which slow down Open3D rendering over time.
+    """
+    if visualizer is None or not polygon_xy:
+        log_error("draw_2d_polygon: no visualizer or polygon provided")
+        return
+
+    vis_id = id(visualizer)
+    # create cached object for this visualizer if not existing
+    if vis_id not in _drawn_polygons_cache:
+        _drawn_polygons_cache[vis_id] = set()
+
+    # hash polygon details to compare later if already existing
+    polygon_hash = hashlib.md5(
+        np.round(np.array(polygon_xy, dtype=np.float32), 6).tobytes() + 
+        bytes(np.round(np.array(color, dtype=np.float32), 4))
+    ).hexdigest()
+    if polygon_hash in _drawn_polygons_cache[vis_id]:
+        return  # Already drawn
+
+
+    # Convert to 3D and create LineSet
     poly_3d = [(x, y, 0.0) for x, y in polygon_xy] + [(polygon_xy[0][0], polygon_xy[0][1], 0.0)]
     lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
 
+    log_info(f"draw_2d_polygon: Adding new polygon to visualizer (hash:{polygon_hash})")
     line_set = o3d.geometry.LineSet()
     line_set.points = o3d.utility.Vector3dVector(poly_3d)
     line_set.lines = o3d.utility.Vector2iVector(lines)
     line_set.paint_uniform_color(color)
-    visualizer.add_geometry(line_set, reset_bounding_box=False)
+
+    try:
+        visualizer.add_geometry(line_set, reset_bounding_box=fit_camera_to_data)
+        _drawn_polygons_cache[vis_id].add(polygon_hash)
+        visualizer.poll_events()
+        visualizer.update_renderer()
+    except Exception as e:
+        log_error(f"[draw_2d_polygon] Failed to add geometry: {e}")

@@ -13,8 +13,8 @@ import numpy as np
 # Select mode we receive the sensor data
 # "UDP": stream live from UDP (uses UDP_ options)
 # "PCAP": stream from pcap dump file (uses PCAP_ options)
-DATA_RECEIVE_MODE = "PCAP"
-#DATA_RECEIVE_MODE = "UDP"
+#DATA_RECEIVE_MODE = "PCAP"
+DATA_RECEIVE_MODE = "UDP"
 
 
 #=== UDP Stream config ===
@@ -39,6 +39,9 @@ UDP_PORT_SENSOR2 = 5004
 
 PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
 PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
+# manually correct delay between recording start of each file
+PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
+PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
 #PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
 #PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
@@ -47,6 +50,10 @@ PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.
 
 #Use packet timestamps to playback at original speed if possible
 PCAP_FILE_REALTIME_PLAYBACK = True
+
+# When PCAP file is finished (all lines replayed) start over from beginning (adds offset to timestamp as if its new data)
+PCAP_LOOP_WHEN_FILE_COMPLETED = True
+# Note: its known to break the sync between 2 files (since wireshark recordings usually start and end slightly different...)
 
 # Custom fixed delay between reading frames from file (useful when not playing back in realtime + goal is to speed up / slow down replay)
 #PCAP_FILE_PACKET_DELAY = 0.0001
@@ -72,6 +79,11 @@ FILE_EXPORT_ENABLE = True
 
 # create output/status.json regularly updated with latest values e.g. detected people, framerates, processing duration...
 STATUS_FILE_ENABLED = True 
+STATUS_FILE_PATH = "output/status.json"
+# Ignore some keys to simplyfy the output on demand:
+STATUS_FILE_KEYS_NOT_ADDED_TO_FILE = ["LOG_LAST_ERRORS", "TIMING_FRAMERATE_DECODER_1", "TIMING_FRAMERATE_DECODER_2", "TIMING_PROCESSING_DURATION_MS", "LOG_LAST_WARNINGS", "TIMING_MOTION_DETECTION__APPLY_FILTERS", "TIMING_MOTION_DETECTION__CLUSTER_DETECTION", "TIMING_MOTION_DETECTION__VISUALIZER_UPDATE" ]
+
+DASHBOARD_TCP_SERVER_ENABLED = False
 
 # enable motion+people detection and tracking
 MOTION_DETECTION_ENABLED = True
@@ -84,8 +96,8 @@ MOTION_DETECTION_ENABLED = True
 # - "merged_dual"         → sensor1 + transformed sensor2 in different colors
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
-VISUALIZER_WINDOW_1_MODE = "merged_dual"
-VISUALIZER_WINDOW_2_MODE = "merged_filtered"
+VISUALIZER_WINDOW_1_MODE = "none"
+VISUALIZER_WINDOW_2_MODE = "none"
 VISUALIZER_WINDOW_3_MODE = "motion_detection"
 
 # logging

@@ -4,11 +4,13 @@ import time
 import numpy as np
 import open3d as o3d
 import os
+import platform
 import laspy
 import sys
 import queue
 import multiprocessing
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Manager, Lock
+from types import SimpleNamespace
 
 # Imports from custom files
 import config as config # import entire config (use with prefix)
@@ -16,12 +18,13 @@ from receiver import start_receiver_thread
 from decoder import decode_loop, frame_synchronizer
 from processor import process_and_visualize_latest_frame
 from visualizer import pick_point_from_cloud, update_visualizer_by_mode, initialize_all_used_visualizer_windows, get_visualizer_by_mode, handle_inputs_of_active_visualizers
-from utils import log_info, log_warn, log_debug
+from utils import log_info, log_warn, log_debug, serialize_numpy_array, kill_all_processes_and_terminate_script, utils_init_global_status_cache
 from shared_types import StampCloudTuple
 from playback_control import start_playback_input_thread, should_advance_frame, get_pick_request, clear_pick_request
 import filters as filters
 import exporter
-from status_file import update_status_single_key
+from status_file import GlobalStatusCache
+from tcp_senderthread import dashboard_tcp_server
 
 
 
@@ -73,6 +76,36 @@ def main():
     # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
 
+    # === Setup shared memory objects ===
+    manager = Manager()
+    # Create a unified shared config object
+    # class has to be initialized in each process, passing the threadsafe variables to the processes
+    # to work on windows
+    status_cache_class_shared_params = SimpleNamespace(
+        status_dict=manager.dict(),
+        dashboard_dict=manager.dict(),
+        lock=manager.Lock(),
+        status_file_path="output/status.json",
+        max_log_entries=5,
+        status_file_enabled=True,
+        status_file_creation_enabled=True
+    )
+    # === Create instance for the main process (file writing, dashboard, etc.) ===
+    status_cache = GlobalStatusCache(
+        shared_status_dict=status_cache_class_shared_params.status_dict,
+        shared_dashboard_dict=status_cache_class_shared_params.dashboard_dict,
+        lock=status_cache_class_shared_params.lock,
+        status_file_path=status_cache_class_shared_params.status_file_path,
+        max_log_entries=status_cache_class_shared_params.max_log_entries,
+        status_file_enabled=status_cache_class_shared_params.status_file_enabled,
+        status_file_creation_enabled=status_cache_class_shared_params.status_file_creation_enabled,
+    )
+
+
+
+
+    # initialize logging
+    utils_init_global_status_cache(status_cache)
 
     # variable for logging processing duration
     stats_processing_start_time = time.time()
@@ -102,6 +135,7 @@ def main():
         packet_queue =   udp_packet_queue_1,
         sensor_id =      1,
         pcap_path =      config.PCAP_FILE_1,
+        pcap_playback_delay_ms = getattr(config, "PCAP_FILE_1_PLAYBACK_DELAY_MS", 0),
         udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR1,
         udp_port =       config.UDP_PORT_SENSOR1,
         filtered_udp_port= config.PCAP_FILE_FILTER_UDP_PORT_SENSOR_1
@@ -112,17 +146,25 @@ def main():
         packet_queue =   udp_packet_queue_2,
         sensor_id =      2,
         pcap_path =      config.PCAP_FILE_2,
+        pcap_playback_delay_ms = getattr(config, "PCAP_FILE_2_PLAYBACK_DELAY_MS", 0),
         udp_listen_ip =  config.UDP_LISTEN_IP_SENSOR2,
         udp_port =       config.UDP_PORT_SENSOR2,
         filtered_udp_port= config.PCAP_FILE_FILTER_UDP_PORT_SENSOR_2
         )
+    
+
+    # === Start Sender Thread for Dashboard ===
+    # Starts thread to send status file in json format to client that connects to the Server
+    # Currently only one Client can connect to the Server
+    if config.DASHBOARD_TCP_SERVER_ENABLED:
+        Process(target=dashboard_tcp_server, args=(status_cache_class_shared_params,)).start()
 
 
     # === Start decoding processes ===
     # Pulls packets from udp_packet_queue, assembles full scans, pushes to decoded_pointcloud_frames_queue
     # using multiprocessing instead of threading to run on actual cpu cores
-    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_1, udp_packet_queue_1, 1)).start()
-    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_2, udp_packet_queue_2, 2)).start()
+    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_1, udp_packet_queue_1, status_cache_class_shared_params, 1)).start()
+    Process(target=decode_loop, args=(decoded_pointcloud_frames_queue_2, udp_packet_queue_2, status_cache_class_shared_params, 2)).start()
 
 
     # === Start process for synchronising the decoded frames ===
@@ -131,6 +173,7 @@ def main():
         decoded_pointcloud_frames_queue_1, # reads from decoded pointclouds queues
         decoded_pointcloud_frames_queue_2,
         synced_frame_queue, # writes synced frame pair in synced_frame queue
+        status_cache_class_shared_params
     )).start()
 
 
@@ -153,7 +196,6 @@ def main():
     # run motion detection
     # handle play/pause/launch-point-picker
     while True:
-        
         #=== get synced pointcloud from queue ===
         stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() # TODO: add timeout here to stay responsive when no data received?
         stats_processing_start_time = time.time()
@@ -181,6 +223,8 @@ def main():
         # also drop points that are above certain z coordinate (1m)
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
+        # === Update cached pointcloud that is sent to dashboard via TCP ===
+        status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
 
         # === Update visualizer windows ===
         # Define context with all needed arrays for visualization functions
@@ -203,7 +247,7 @@ def main():
         if config.MOTION_DETECTION_ENABLED:
             # determine which visualizer window is configured to display the motion detection output
             # run motion detection
-            process_and_visualize_latest_frame(context["pc_filtered"], get_visualizer_by_mode("motion_detection"))
+            process_and_visualize_latest_frame(context["pc_filtered"], get_visualizer_by_mode("motion_detection"), status_cache)
 
 
         # === File export of merged frames ===
@@ -237,7 +281,7 @@ def main():
         # === update statistics ===
         # done processing - Log processing duration to file
         stats_processing_duration_ms = int((time.time() - stats_processing_start_time) * 1000)
-        update_status_single_key("TIMING_PROCESSING_DURATION_MS", f"{stats_processing_duration_ms} ms")
+        status_cache.update_status_key("TIMING_PROCESSING_DURATION_MS", f"{stats_processing_duration_ms} ms")
 
 
 
@@ -248,13 +292,9 @@ def main():
 # call main() when file called directly
 if __name__ == "__main__":
     try:
+        if platform.system() != "Windows":
+            os.setpgrp()  # makes current process a new group leader
         main()
     except KeyboardInterrupt:
         print("\n[EXIT] Interrupted from keyboard.")
-        # TODO kill all started processes here
-        for p in multiprocessing.active_children():
-            print(f"[EXIT] Killing process {p.pid}")
-            p.terminate()
-            p.join()
-        print("[EXIT] force-killing script...")
-        os._exit(0)
+        kill_all_processes_and_terminate_script()
