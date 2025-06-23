@@ -138,7 +138,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         # count people entering and leaving the room
         people_inside = track_room_occupancy(
             #tracked_clusters_fast,
-            tracked_clusters_precise,
+            tracked_clusters_fast,
             polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON,
             history_buffer=None,
             status_cache=status_cache,
