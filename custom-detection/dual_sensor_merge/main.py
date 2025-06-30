@@ -11,6 +11,8 @@ import queue
 import multiprocessing
 from multiprocessing import Process, Queue, Manager, Lock
 from types import SimpleNamespace
+from point_net_detector import PointCloudPeopleDetector
+
 
 # Imports from custom files
 import config as config # import entire config (use with prefix)
@@ -75,6 +77,8 @@ def main():
     # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
     # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
+
+    people_detector = PointCloudPeopleDetector(model_path="model.pth")
 
     # === Setup shared memory objects ===
     manager = Manager()
@@ -223,6 +227,12 @@ def main():
         # also drop points that are above certain z coordinate (1m)
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
+
+        # === Run PointNet AI Model and Clustering
+        num_people, Ai_HumanPoints, ai_clusters = people_detector.detect(pointcloud_merged_filtered_array)
+        status_cache.update_status_key("AI DETECTION PEOPLE COUNT", f"{num_people}")
+        
+
         # === Update cached pointcloud that is sent to dashboard via TCP ===
         status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
 
@@ -233,6 +243,8 @@ def main():
             "pointcloud_2_array": pointcloud_2_array,
             "pointcloud_1_o3d": pointcloud_1_o3d,
             "pointcloud_2_o3d": pointcloud_2_o3d,
+            "pointcloud_ai": Ai_HumanPoints,
+            "ai_clusters": ai_clusters,
             "pc2_transformed": np.asarray(pointcloud_2_transformed_o3d.points),
             "pc_merged": pointcloud_merged_array,
             "pc_filtered": pointcloud_merged_filtered_array,
@@ -254,7 +266,6 @@ def main():
         # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
         # This Line does not have to be changed for the event, that File Export will be deactivated
         LazFileSave.save_frame(pointcloud_merged_filtered_array)
-
 
         # === handle launch point picker functionality ===
         # Check if a pick was requested by terminal input
