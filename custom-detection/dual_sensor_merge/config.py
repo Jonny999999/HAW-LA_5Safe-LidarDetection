@@ -91,13 +91,14 @@ MOTION_DETECTION_ENABLED = True
 # === Visualizer window config ===
 # Options:
 # - "none"
+# - "ai"
 # - "sensor1"
 # - "sensor2"
 # - "merged_dual"         → sensor1 + transformed sensor2 in different colors
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
 VISUALIZER_WINDOW_1_MODE = "none"
-VISUALIZER_WINDOW_2_MODE = "none"
+VISUALIZER_WINDOW_2_MODE = "ai"
 VISUALIZER_WINDOW_3_MODE = "motion_detection"
 
 # logging

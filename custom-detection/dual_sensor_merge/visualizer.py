@@ -221,6 +221,9 @@ def update_visualizer_by_mode(mode, context):
     elif mode == "merged_dual":
         visualize_dual_frame(context["pointcloud_1_array"], context["pc2_transformed"], vis)
 
+    elif mode == "ai":
+        visualize_dual_frame(context["pc2_transformed"], context["pointcloud_ai"], vis)
+
     elif mode == "merged_filtered":
         visualize_dual_frame(context["pc_merged"], context["pc_filtered"], vis)
 
