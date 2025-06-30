@@ -47,7 +47,7 @@ class PointCloudPeopleDetector:
         clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(human_points)
         return human_points, clustering.labels_
 
-    def predict_count(self, pointcloud: np.ndarray, eps=0.5, min_samples=10) -> int:
+    def predict_count(self, pointcloud: np.ndarray, eps=0.5, min_samples=17) -> int:
         """
         Runs inference on the point cloud and returns the number of detected people clusters.
 
@@ -98,3 +98,29 @@ class PointCloudPeopleDetector:
             pred_labels = pred_logits.argmax(dim=2).squeeze(0).cpu().numpy()
 
         return pred_labels
+    def detect(self, pointcloud: np.ndarray, eps=0.5, min_samples=17) -> tuple[int, np.ndarray]:
+        """
+        Runs inference and clustering on the point cloud.
+
+        Returns:
+            (num_clusters, human_points):
+                num_clusters (int): Number of detected people clusters.
+                human_points (np.ndarray): Mx3 array of points classified as human.
+        """
+        if pointcloud.ndim != 2 or pointcloud.shape[1] != 3:
+            raise ValueError("Pointcloud must be Nx3 shaped (x, y, z)")
+
+        points = pointcloud.astype(np.float32)
+        points_tensor = torch.from_numpy(points).float().to(self.device)
+
+        with torch.no_grad():
+            pred_logits = self.model(points_tensor.unsqueeze(0))
+            pred_labels = pred_logits.argmax(dim=2).squeeze(0).cpu().numpy()
+
+        human_points, cluster_ids = self.cluster_predictions(points, pred_labels, eps=eps, min_samples=min_samples)
+
+        if len(human_points) == 0:
+            return 0, np.empty((0, 3), dtype=np.float32)
+
+        num_clusters = len(set(cluster_ids)) - (1 if -1 in cluster_ids else 0)
+        return num_clusters, human_points

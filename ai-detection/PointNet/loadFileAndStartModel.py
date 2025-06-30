@@ -26,7 +26,7 @@ class SimplePointNet(nn.Module):
         x = self.fc5(x)
         return x
 
-def cluster_predictions(points, pred_labels, eps=0.5, min_samples=10):
+def cluster_predictions(points, pred_labels, eps=0.5, min_samples=17):
     human_points = points[pred_labels == 1]
     if len(human_points) == 0:
         return np.array([]), np.array([])  # Keine Menschen

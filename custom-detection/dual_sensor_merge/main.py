@@ -261,9 +261,9 @@ def main():
 
 
         # === Run PointNet AI Model and Clustering
-        num_people = people_detector.predict_count(pointcloud_merged_filtered_array)
+        num_people, Ai_HumanPoints = people_detector.detect(pointcloud_merged_filtered_array)
         status_cache.update_status_key("AI DETECTION PEOPLE COUNT", f"{num_people}")
-
+        
 
         # === handle launch point picker functionality ===
         # Check if a pick was requested by terminal input
