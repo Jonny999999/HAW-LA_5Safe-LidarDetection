@@ -229,7 +229,7 @@ def main():
 
 
         # === Run PointNet AI Model and Clustering
-        num_people, Ai_HumanPoints = people_detector.detect(pointcloud_merged_filtered_array)
+        num_people, Ai_HumanPoints, ai_clusters = people_detector.detect(pointcloud_merged_filtered_array)
         status_cache.update_status_key("AI DETECTION PEOPLE COUNT", f"{num_people}")
         
 
@@ -244,6 +244,7 @@ def main():
             "pointcloud_1_o3d": pointcloud_1_o3d,
             "pointcloud_2_o3d": pointcloud_2_o3d,
             "pointcloud_ai": Ai_HumanPoints,
+            "ai_clusters": ai_clusters,
             "pc2_transformed": np.asarray(pointcloud_2_transformed_o3d.points),
             "pc_merged": pointcloud_merged_array,
             "pc_filtered": pointcloud_merged_filtered_array,

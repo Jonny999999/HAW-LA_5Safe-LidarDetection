@@ -99,11 +99,11 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
             cluster_cache=None,
             distance_threshold=0.5, # points within that radius are merged as one cluster
             min_points=70, # min points in a cluster to considered as potential cluster/movement at all
-            max_moving_points_ignore_frame=4000, # ignore entire frame if e.g. sensor moved
-            min_z_height=0.5, # initial detection threshold
+            max_moving_points_ignore_frame=10000, # ignore entire frame if e.g. sensor moved
+            min_z_height=0.9, # initial detection threshold
             min_volume_m3=0.2, # initial detection threshold
-            min_frames_to_confirm=12, # frame count the initial thresholds have to be fulfilled to be added as cluster
-            retain_frames=100, # at 5fps
+            min_frames_to_confirm=15, # frame count the initial thresholds have to be fulfilled to be added as cluster
+            retain_frames=800, # at 5fps
             match_threshold=1.2, # distance of cluster center from old to new one to be detected as a match
             enable_logging=True,
         ) #using default detection thresholds (see definition)
@@ -117,7 +117,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
             cluster_cache=fast_cluster_detection_cache,
             distance_threshold=0.2, # points within that radius are merged as one cluster
             min_points=60, # min points in a cluster to considered as potential cluster/movement at all
-            max_moving_points_ignore_frame=4000, # ignore entire frame if e.g. sensor moved
+            max_moving_points_ignore_frame=10000, # ignore entire frame if e.g. sensor moved
             min_z_height=0.5, # initial detection threshold
             min_volume_m3=0.2, # initial detection threshold
             min_frames_to_confirm=3, # frame count the initial thresholds have to be fulfilled to be added as cluster

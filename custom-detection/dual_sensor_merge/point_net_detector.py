@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from sklearn.cluster import DBSCAN
+import open3d as o3d
 
 class PointCloudPeopleDetector:
     """
@@ -45,7 +46,20 @@ class PointCloudPeopleDetector:
         if len(human_points) == 0:
             return np.array([]), np.array([])
         clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(human_points)
-        return human_points, clustering.labels_
+        labels = clustering.labels_
+
+        # Convert clustered points to a list of Open3D PointClouds
+        clusters = []
+        for label in np.unique(labels):
+            if label == -1:
+                continue  # skip noise
+            indices = np.where(labels == label)[0]
+            cluster_pcd = o3d.geometry.PointCloud()
+            cluster_pcd.points = o3d.utility.Vector3dVector(human_points[indices])
+            clusters.append(cluster_pcd)
+        
+        # Now return the raw points, labels, and the list of cluster point clouds
+        return human_points, labels, clusters
 
     def predict_count(self, pointcloud: np.ndarray, eps=0.5, min_samples=17) -> int:
         """
@@ -69,7 +83,7 @@ class PointCloudPeopleDetector:
             pred_logits = self.model(points_tensor.unsqueeze(0))  # shape: (1, N, 2)
             pred_labels = pred_logits.argmax(dim=2).squeeze(0).cpu().numpy()
 
-        human_points, cluster_ids = self.cluster_predictions(points, pred_labels, eps=eps, min_samples=min_samples)
+        human_points, cluster_ids, clusters = self.cluster_predictions(points, pred_labels, eps=eps, min_samples=min_samples)
 
         if len(human_points) == 0:
             return 0
@@ -98,7 +112,7 @@ class PointCloudPeopleDetector:
             pred_labels = pred_logits.argmax(dim=2).squeeze(0).cpu().numpy()
 
         return pred_labels
-    def detect(self, pointcloud: np.ndarray, eps=0.5, min_samples=17) -> tuple[int, np.ndarray]:
+    def detect(self, pointcloud: np.ndarray, eps=0.3, min_samples=100) -> tuple[int, np.ndarray]:
         """
         Runs inference and clustering on the point cloud.
 
@@ -117,10 +131,10 @@ class PointCloudPeopleDetector:
             pred_logits = self.model(points_tensor.unsqueeze(0))
             pred_labels = pred_logits.argmax(dim=2).squeeze(0).cpu().numpy()
 
-        human_points, cluster_ids = self.cluster_predictions(points, pred_labels, eps=eps, min_samples=min_samples)
+        human_points, cluster_ids, clusters = self.cluster_predictions(points, pred_labels, eps=eps, min_samples=min_samples)
 
         if len(human_points) == 0:
             return 0, np.empty((0, 3), dtype=np.float32)
 
         num_clusters = len(set(cluster_ids)) - (1 if -1 in cluster_ids else 0)
-        return num_clusters, human_points
+        return num_clusters, human_points, clusters

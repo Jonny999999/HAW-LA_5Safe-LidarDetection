@@ -75,7 +75,7 @@ PCAP_FILE_FILTER_UDP_PORT_SENSOR_2 = None
 ###############################
 
 # create laz files for each merged frame in output/
-FILE_EXPORT_ENABLE = True
+FILE_EXPORT_ENABLE = False
 
 # create output/status.json regularly updated with latest values e.g. detected people, framerates, processing duration...
 STATUS_FILE_ENABLED = True 
@@ -100,6 +100,7 @@ MOTION_DETECTION_ENABLED = True
 VISUALIZER_WINDOW_1_MODE = "none"
 VISUALIZER_WINDOW_2_MODE = "ai"
 VISUALIZER_WINDOW_3_MODE = "motion_detection"
+#VISUALIZER_WINDOW_3_MODE = "none"
 
 # logging
 LOG_DEBUG_ENABLED   = False

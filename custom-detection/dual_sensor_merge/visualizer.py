@@ -16,7 +16,8 @@ visualizer_modes = {}
 #########################
 ######## CONFIG #########
 #########################
-VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
+VISUALIZER_DEFAULT_WINDOW_WIDTH = 1920
+#VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
 VISUALIZER_DEFAULT_WINDOW_HEIGHT = 2160
 CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED = True
 VISUALIZER_DEFAULT_CAMERA_POSITION = {
@@ -222,7 +223,20 @@ def update_visualizer_by_mode(mode, context):
         visualize_dual_frame(context["pointcloud_1_array"], context["pc2_transformed"], vis)
 
     elif mode == "ai":
-        visualize_dual_frame(context["pc2_transformed"], context["pointcloud_ai"], vis)
+        visualize_dual_frame(context["pc_filtered"], context["pointcloud_ai"], vis)
+        clusters = context["ai_clusters"]
+        for i, cluster in enumerate(clusters):
+            draw_bounding_box(
+                pcd=cluster,
+                visualizer=vis,
+                color=(0.0, 0.8, 0.8),
+                min_volume_m3=0.0,
+                clear_existing=(i == 0),
+                render_now=(i == len(clusters) - 1),
+                thick_lines_enabled=True,  # or False depending on your needs
+                thickness_hack_layer_offset=0.01,
+                thickness_hack_layer_count=3
+            )
 
     elif mode == "merged_filtered":
         visualize_dual_frame(context["pc_merged"], context["pc_filtered"], vis)
@@ -483,7 +497,8 @@ def draw_cluster_boxes(clusters, visualizer):
 
 
 
-drawn_bounding_boxes = []  # Global cache of drawn box objects
+#drawn_bounding_boxes = []  # Global cache of drawn box objects
+_drawn_bounding_boxes_cache = {}  # Global: visualizer_id -> set of boxes
 def draw_bounding_box(
     pcd,
     visualizer,
@@ -495,51 +510,36 @@ def draw_bounding_box(
     thickness_hack_layer_offset=0.01,
     thickness_hack_layer_count=3
 ):
-    """
-    Draws a bounding box around a point cloud in Open3D and tracks drawn objects to prevent buildup.
-    Optionally simulates thicker lines by drawing multiple offset boxes.
-
-    Args:
-        pcd (PointCloud or None): Cluster point cloud. If None and clear_existing is True, only clears.
-        visualizer (Visualizer): The Open3D visualizer instance.
-        color (tuple): RGB tuple for box color.
-        min_volume_m3 (float): If box is smaller than this, enlarge it around the centroid.
-        clear_existing (bool): Whether to clear all previously drawn boxes.
-        render_now (bool): Whether to update the visualizer immediately (set False if drawing multiple boxes).
-        thick_lines_enabled (bool): If True, draws multiple offset boxes to fake thicker lines.
-        thickness_hack_layer_offset (float): Size of offset in meters for each fake thickness layer.
-        thickness_hack_layer_count (int): Number of offset layers (3 = center + 2 more)
-    """
     import open3d as o3d
 
     if visualizer is None:
         return
 
-    # === Clear all previously drawn boxes ===
+    vis_id = id(visualizer)
+
+    # Create visualizer-specific cache if it doesn't exist
+    if vis_id not in _drawn_bounding_boxes_cache:
+        _drawn_bounding_boxes_cache[vis_id] = set()
+
+    vis_cache = _drawn_bounding_boxes_cache[vis_id]
+
+    # === Clear all previously drawn boxes for this visualizer ===
     if clear_existing:
-        for box in drawn_bounding_boxes:
+        for box in vis_cache:
             try:
                 visualizer.remove_geometry(box, reset_bounding_box=False)
             except Exception as e:
                 log_warn(f"[draw_bounding_boxes] Failed to remove box: {e}")
-        drawn_bounding_boxes.clear()
+        vis_cache.clear()
 
     # === Draw new box (if point cloud provided) ===
     if pcd is not None:
         bbox = pcd.get_axis_aligned_bounding_box()
         volume = bbox.volume()
 
-        # Enlarge box to min volume
         if min_volume_m3 > 0 and volume < min_volume_m3:
             center = bbox.get_center()
-            ## create cube box 1:1:1 aspect ratio
-            ##half_size = (min_volume_m3 ** (1/3)) / 2
-            ##bbox = o3d.geometry.AxisAlignedBoundingBox(
-            ##    min_bound=(center[0] - half_size, center[1] - half_size, center[2] - half_size),
-            ##    max_bound=(center[0] + half_size, center[1] + half_size, center[2] + half_size)
-            ##)
-            # create taller box with 1:1:3 aspect ratio (x:y:z)
-            base_size = (min_volume_m3 / 3.0) ** (1/3)  # square base, taller z
+            base_size = (min_volume_m3 / 3.0) ** (1/3)
             half_xy = base_size / 2
             half_z = (3.0 * base_size) / 2
             bbox = o3d.geometry.AxisAlignedBoundingBox(
@@ -547,14 +547,11 @@ def draw_bounding_box(
                 max_bound=(center[0] + half_xy, center[1] + half_xy, center[2] + half_z)
             )
 
-        # Either draw once or multiple times with small offsets
         boxes_to_draw = []
 
         if thick_lines_enabled:
             center = bbox.get_center()
             extents = bbox.get_extent()
-
-            # Create multiple slightly scaled versions around center
             for i in range(-thickness_hack_layer_count//2, thickness_hack_layer_count//2 + 1):
                 scale = 1.0 + i * thickness_hack_layer_offset
                 half_ext = 0.5 * extents * scale
@@ -567,15 +564,14 @@ def draw_bounding_box(
             bbox.color = color
             boxes_to_draw.append(bbox)
 
-        # Add to visualizer and cache
         for box in boxes_to_draw:
             visualizer.add_geometry(box, reset_bounding_box=False)
-            drawn_bounding_boxes.append(box)
+            vis_cache.add(box)
 
-    # === Final visualizer update if requested ===
     if render_now:
         visualizer.poll_events()
         visualizer.update_renderer()
+
 
 
 
