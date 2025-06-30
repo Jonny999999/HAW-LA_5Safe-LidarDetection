@@ -11,6 +11,8 @@ import queue
 import multiprocessing
 from multiprocessing import Process, Queue, Manager, Lock
 from types import SimpleNamespace
+from point_net_detector import PointCloudPeopleDetector
+
 
 # Imports from custom files
 import config as config # import entire config (use with prefix)
@@ -75,6 +77,8 @@ def main():
     # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
     # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
+
+    people_detector = PointCloudPeopleDetector(model_path="model.pth")
 
     # === Setup shared memory objects ===
     manager = Manager()
@@ -254,6 +258,11 @@ def main():
         # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
         # This Line does not have to be changed for the event, that File Export will be deactivated
         LazFileSave.save_frame(pointcloud_merged_filtered_array)
+
+
+        # === Run PointNet AI Model and Clustering
+        num_people = people_detector.predict_count(pointcloud_merged_filtered_array)
+        status_cache.update_status_key("AI DETECTION PEOPLE COUNT", f"{num_people}")
 
 
         # === handle launch point picker functionality ===
