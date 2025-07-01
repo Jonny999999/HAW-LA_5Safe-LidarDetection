@@ -253,23 +253,25 @@ def main():
         # === Update cached pointcloud that is sent to dashboard via TCP ===
         status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
 
-        # send pointcloud to AI-model thread
+        # === send pointcloud to AI-model thread ===
         # Drop oldest if full
         if merged_filtered_pointcoud_queue.full():
             try:
                 merged_filtered_pointcoud_queue.get_nowait()
-                log_warn("Dropped oldest frame from full queue")
+                log_warn("[main thread] AI-thread input queue full -> dropping oldest frame (model not processing fast enough?)")
             except Empty:
                 log_warn("Queue was full but empty??")
         # Now insert
         merged_filtered_pointcoud_queue.put_nowait(pointcloud_merged_filtered_array)
 
 
-        # receive last AI-detection result from the AI-model thread
+        # === receive last AI-detection result from the AI-model thread ===
+        # note this has at least 1 frame delay compared to merged pointcloud 
+        #  (also returns input pointcloud so visualized pointclouds are in sync)
         try:
             last_ai_output = ai_model_output_queue.get_nowait()
         except queue.Empty:
-            log_warn("[main thread] AI-thread output queue empty -> useing prev result (model not processing fast enough?)")
+            log_warn("[main thread] AI-thread output queue empty -> using prev result in vis (model not processing fast enough?)")
             pass  # keep using the previous last_ai_output
         # extract AI output variables from the queue object
         ai_numPeople, ai_HumanPoints, ai_clusters, ai_pointcloud_input = last_ai_output

@@ -9,6 +9,9 @@ import time
 from queue import Empty
 from status_file import GlobalStatusCache
 
+
+# Thread for running AI detection on a pointcloud from a queue
+# returns output via queue as well
 def ai_detection_thread(merged_filtered_pointcoud_queue, ai_model_output_queue, status_cache_class_shared_params):
 
     # status cache setup
@@ -25,6 +28,7 @@ def ai_detection_thread(merged_filtered_pointcoud_queue, ai_model_output_queue, 
     people_detector = PointCloudPeopleDetector(model_path="model.pth")
 
     while True:
+        #=== wait for new pointcloud input ===
         merged_pointcloud = merged_filtered_pointcoud_queue.get()
 
         # === Run PointNet AI Model and Clustering ===
@@ -47,6 +51,7 @@ def ai_detection_thread(merged_filtered_pointcoud_queue, ai_model_output_queue, 
 
 
 
+# AI detection class
 class PointCloudPeopleDetector:
     """
     Self-contained class for detecting the number of people in a point cloud.
