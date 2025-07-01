@@ -33,20 +33,6 @@ from point_net_detector import ai_detection_thread
 
 
 
-# TODO 2025.06.03:
-#   - fix: exit correctly, finish UDP socket due to error OSError: [Errno 98] Address already in use after restarting in UDP mode
-#   - fix: random gui crash and sync fail (same as sensor disconnected), not happening when debug output on
-#   - remove timeout no data
-#   - fallback to 1 sensor if second one not sending
-#   - visualization interfacae
-#   - improved people tracking
-#   - loglevels?
-# 
-
-
-
-
-
 def main():
     # change multiprocessing spawn method (needed for CUDA to work in a sub process otside main)
     multiprocessing.set_start_method("spawn", force=True)
@@ -224,7 +210,8 @@ def main():
     # handle play/pause/launch-point-picker
     while True:
         #=== get synced pointcloud from queue ===
-        stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() # TODO: add timeout here to stay responsive when no data received?
+        # TODO: add timeout here to stay responsive when no data received?
+        stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() 
         stats_processing_start_time = time.time()
 
         # splice down pc1 and pc2 to XYZ Coordinates
@@ -251,6 +238,7 @@ def main():
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
         # === Update cached pointcloud that is sent to dashboard via TCP ===
+        # TODO: TCP interface not used anymore, drop this?
         status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
 
         # === send pointcloud to AI-model thread ===
@@ -258,7 +246,7 @@ def main():
         if merged_filtered_pointcoud_queue.full():
             try:
                 merged_filtered_pointcoud_queue.get_nowait()
-                log_warn("[main thread] AI-thread input queue full -> dropping oldest frame (model not processing fast enough?)")
+                log_warn("[main] AI-thread input queue full -> dropping oldest frame (model not processing fast enough?)")
             except Empty:
                 log_warn("Queue was full but empty??")
         # Now insert
@@ -271,7 +259,7 @@ def main():
         try:
             last_ai_output = ai_model_output_queue.get_nowait()
         except queue.Empty:
-            log_warn("[main thread] AI-thread output queue empty -> using prev result in vis (model not processing fast enough?)")
+            log_warn("[main] AI-thread output queue empty -> using prev result in vis (model not processing fast enough?)")
             pass  # keep using the previous last_ai_output
         # extract AI output variables from the queue object
         ai_numPeople, ai_HumanPoints, ai_clusters, ai_pointcloud_input = last_ai_output
@@ -291,13 +279,14 @@ def main():
             "pc_merged": pointcloud_merged_array,
             "pc_filtered": pointcloud_merged_filtered_array,
         }
-        # update each visualizer depending on its mode
+        # update each visualizer depending on its configured mode
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_1_MODE, context)
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_2_MODE, context)
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_3_MODE, context)
+        # note: the visualizer in "motion detection" mode is updated by process_and_visualize_latest_frame directly
 
 
-        # === run Motion Detection ===
+        # === run Motion Detection Algorithm ===
         if config.MOTION_DETECTION_ENABLED:
             # determine which visualizer window is configured to display the motion detection output
             # run motion detection
@@ -308,6 +297,7 @@ def main():
         # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
         # This Line does not have to be changed for the event, that File Export will be deactivated
         LazFileSave.save_frame(pointcloud_merged_filtered_array)
+
 
         # === handle launch point picker functionality ===
         # Check if a pick was requested by terminal input

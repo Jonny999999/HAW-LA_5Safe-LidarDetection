@@ -108,7 +108,7 @@ def frame_synchronizer(queue_1, queue_2, synced_queue, status_cache_class_shared
     buffer_1 = deque()
     buffer_2 = deque()
     failed_match_counter = 0
-    max_failed_match_warn = 5 # max failed sync attempts in a row for warning to be printed (tolerance too tight)
+    max_failed_match_warn = 10 # max failed sync attempts in a row for warning to be printed (tolerance too tight)
     stats_last_frame_synced = time.time()
 
     status_cache = GlobalStatusCache(
@@ -191,9 +191,9 @@ def frame_synchronizer(queue_1, queue_2, synced_queue, status_cache_class_shared
             # No match found, but prevent buffer overflow
             if len(buffer_1) > max_buffer_size:
                 dropped = buffer_1.popleft()
-                log_warn(f"[sync] Dropped old Sensor 1 frame: {dropped[0]}")
+                log_warn(f"[sync] Sync buffer full - Dropped old Sensor 1 frame: {dropped[0]}")
                 log_warn(f"[sync] increase max-buffer or decrease threshold? min-dt={best_dt}, threshold={tolerance}")
             if len(buffer_2) > max_buffer_size:
                 dropped = buffer_2.popleft()
-                log_warn(f"[sync] Dropped old Sensor 2 frame: {dropped[0]}")
+                log_warn(f"[sync] Sync buffer full - Dropped old Sensor 2 frame: {dropped[0]}")
                 log_warn(f"[sync] increase max-buffer or decrease threshold? min-dt={best_dt}, threshold={tolerance}")

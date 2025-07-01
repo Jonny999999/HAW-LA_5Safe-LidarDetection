@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 from multiprocessing import Manager, Lock
 import config
+import utils
 
 class GlobalStatusCache:
     """
@@ -44,8 +45,8 @@ class GlobalStatusCache:
 
 
         # === Debug output for validation ===
-        print(f"[GlobalStatusCache.__init__] Shared status dict id: {id(self._status_cache)}")
-        print(f"[GlobalStatusCache.__init__] Shared dashboard dict id: {id(self._dashboard_cache)}")
+        #print(f"[GlobalStatusCache.__init__] Shared status dict id: {id(self._status_cache)}")
+        #print(f"[GlobalStatusCache.__init__] Shared dashboard dict id: {id(self._dashboard_cache)}")
 
 
     # === Public API ===
@@ -137,7 +138,7 @@ class GlobalStatusCache:
                 with self._lock:
                     self._status_cache.update(loaded)
         except Exception as e:
-            print(f"[GlobalStatusCache] Failed to load from file: {e}")
+            log_error(f"[GlobalStatusCache] Failed to load from file: {e}")
 
     # === Internal Helpers ===
 
@@ -173,4 +174,4 @@ class GlobalStatusCache:
                 with open(self.status_file_path, "w") as f:
                     json.dump(sorted_dict, f, indent=2)
             except Exception as e:
-                print(f"[GlobalStatusCache] Failed to write status file: {e}")
+                log_error(f"[GlobalStatusCache] Failed to write status file: {e}")

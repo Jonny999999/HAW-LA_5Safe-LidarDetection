@@ -29,7 +29,18 @@ def input_thread():
     Thread that listens for user input from the terminal.
     Controls pause/play and step-by-step navigation.
     """
-    print("[Playback] Controls: 'p' = pause/resume, 'n' = next, 'pick1'/'pick2', 'resume', 'q' = quit")
+    help="""\
+  =============== [playback_control]  CLI-Controls ================
+  === Usage: Type command in terminal and press enter to run    ===
+  === Available Commands:                                       ===
+  ===     - 'p' = pause/resume                                  ===
+  ===     - 'n' = next-frame                                    ===
+  ===     - 'pick1'|'pick2'|'1'|'2'                             ===
+  ===       launches point picker window for that sensor        ===   
+  ===     - 'q' = quit")                                        ===
+  === Note: Some commands might be broken, since this is legacy ===
+  ================================================================="""
+    print(help)
     while True:
         try:
             cmd = input(">> ").strip().lower()

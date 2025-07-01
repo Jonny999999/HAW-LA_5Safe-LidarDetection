@@ -8,6 +8,7 @@ import open3d as o3d
 import time
 from queue import Empty
 from status_file import GlobalStatusCache
+from utils import * # logging
 
 
 # Thread for running AI detection on a pointcloud from a queue
@@ -28,26 +29,31 @@ def ai_detection_thread(merged_filtered_pointcoud_queue, ai_model_output_queue, 
     people_detector = PointCloudPeopleDetector(model_path="model.pth")
 
     while True:
-        #=== wait for new pointcloud input ===
-        merged_pointcloud = merged_filtered_pointcoud_queue.get()
+        try:
+            #=== wait for new pointcloud input ===
+            merged_pointcloud = merged_filtered_pointcoud_queue.get()
 
-        # === Run PointNet AI Model and Clustering ===
-        t0 = time.perf_counter()
-        num_people, Ai_HumanPoints, ai_clusters, input_pointcloud = people_detector.detect(merged_pointcloud)
+            # === Run PointNet AI Model and Clustering ===
+            t0 = time.perf_counter()
+            num_people, Ai_HumanPoints, ai_clusters, input_pointcloud = people_detector.detect(merged_pointcloud)
 
-        # logging
-        t1 = time.perf_counter()
-        elapsed_ms = (t1 - t0) * 1000
-        status_cache.update_status_key("DETECTION_AI_PEOPLE_COUNT", f"{num_people}")
-        status_cache.update_status_key("TIMING_AI-MODEL_MS", f"{elapsed_ms:.1f} ms")
+            # logging
+            t1 = time.perf_counter()
+            elapsed_ms = (t1 - t0) * 1000
+            status_cache.update_status_key("DETECTION_AI_PEOPLE_COUNT", f"{num_people}")
+            status_cache.update_status_key("TIMING_AI-MODEL_MS", f"{elapsed_ms:.1f} ms")
 
-        # === Push result into output queue ===
-        if ai_model_output_queue.full():
-            try:
-                ai_model_output_queue.get_nowait()  # drop oldest result
-            except Empty:
-                pass
-        ai_model_output_queue.put_nowait((num_people, Ai_HumanPoints, ai_clusters, input_pointcloud))
+            # === Push result into output queue ===
+            if ai_model_output_queue.full():
+                try:
+                    ai_model_output_queue.get_nowait()  # drop oldest result
+                except Empty:
+                    pass
+            ai_model_output_queue.put_nowait((num_people, Ai_HumanPoints, ai_clusters, input_pointcloud))
+        except Exception as e:
+            log_error(f"AI_THREAD Error: {type(e).__name__}: {e}")
+            log_error("-> skipping, waiting for next frame...")
+            continue
 
 
 

@@ -39,12 +39,14 @@ UDP_PORT_SENSOR2 = 5004
 
 PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
 PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
-# manually correct delay between recording start of each file
+# manually correct delay between recording start of each file:
 PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
 PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
 #PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
 #PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
+#PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
+#PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
 
 
@@ -90,21 +92,22 @@ MOTION_DETECTION_ENABLED = True
 
 # === Visualizer window config ===
 # Options:
-# - "none"
-# - "ai"
-# - "sensor1"
-# - "sensor2"
+# - "none"          -> disabled, window will not be created
+# - "ai"            -> merged-filtered-pointcloud + AI pointcloud + Detected cluster boxes
+# - "sensor1"       -> raw sensor1 pointcloud
+# - "sensor2"       -> raw sensor2 pointcloud
 # - "merged_dual"         → sensor1 + transformed sensor2 in different colors
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
-VISUALIZER_WINDOW_1_MODE = "none"
+VISUALIZER_WINDOW_1_MODE = "motion_detection"
 VISUALIZER_WINDOW_2_MODE = "ai"
-VISUALIZER_WINDOW_3_MODE = "motion_detection"
+VISUALIZER_WINDOW_3_MODE = "none"
 #VISUALIZER_WINDOW_3_MODE = "none"
 
 # logging
+# TODO: use actual logging library with actual loglevels per TAG
 LOG_DEBUG_ENABLED   = False
-LOG_INFO_ENABLED    = False
+LOG_INFO_ENABLED    = True
 LOG_WARN_ENABLED    = True
 LOG_ERROR_ENABLED   = True
 

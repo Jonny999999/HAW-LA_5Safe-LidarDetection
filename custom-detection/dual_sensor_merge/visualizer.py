@@ -68,7 +68,7 @@ def initialize_visualizer(
     title="LiDAR Viewer", 
     width=VISUALIZER_DEFAULT_WINDOW_WIDTH, 
     height=VISUALIZER_DEFAULT_WINDOW_HEIGHT):
-    log_info(f"Initializing visualizer: {title}")
+    log_info(f"[visualizer.py] Initializing visualizer window: {title}")
     visualizer = o3d.visualization.Visualizer()
     visualizer.create_window(window_name=title, width=width, height=height)
 
@@ -252,7 +252,7 @@ def update_visualizer_by_mode(mode, context):
         pass
 
     else:
-        log_warn(f"[visualizer] Unknown visualization mode: {mode}")
+        log_warn(f"[visualizer] Unknown visualization mode: {mode} -> ignoring update")
 
 
 
@@ -355,7 +355,7 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
         visualizer (open3d.visualization.Visualizer): Visualizer instance
     """
     if visualizer is None or (pointcloid1_gray.size == 0 and pointcloud2_dominant_red.size == 0):
-        log_warn("No visualizer or both frames empty, skipping visualization.")
+        log_warn("[visualize_dual_frame] No visualizer or both frames empty, skipping visualization.")
         return
 
     # Slice to XYZ
@@ -373,7 +373,7 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
 
     # First time init per visualizer -> create cached structure
     if vis_id not in _visualizer_objects:
-        log_info("visualize_dual_frame: Creating object for tracking visualizer/window id={vis_id}")
+        log_debug(f"[visualize_dual_frame] Initially creating object for tracking visualizer/window id={vis_id}")
         _visualizer_objects[vis_id] = {
             "pcd_raw": o3d.geometry.PointCloud(),
             "pcd_filtered": o3d.geometry.PointCloud(),
@@ -392,7 +392,7 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
 
     # Add geometry only once
     if not state["added"]:
-        log_info("visualize_dual_frame: visualizer={vis_id} initially adding 2x pointcloud geometry")
+        log_debug(f"[visualize_dual_frame] visualizer={vis_id} initially adding 2x pointcloud geometry")
         visualizer.add_geometry(state["pcd_raw"], reset_bounding_box=False)
         visualizer.add_geometry(state["pcd_filtered"], reset_bounding_box=False)
         state["added"] = True
@@ -412,43 +412,60 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
 
 
 
-
-# Function for creating a independent new window with pointcloud for picking a point 
-# (blocks the script until window closed)
 def pick_point_from_cloud(points, title="Pick Points"):
     """
     Opens a blocking Open3D editor window for selecting points.
     Returns list of 3D coordinates (user must press 'q' to close).
     """
-    # convert pointcloud to open3d format
+    print("====================================================================================")
+    print("============================== POINT PICKER LAUNCHED ===============================")
+    print(f"[Pick] SHIFT+Click to select points in '{title}', press Q to exit.")
+    print(f"[Pick] ***close window*** to get selected points logged with ***FULL PRECISION***")
+    print("====================================================================================")
+
+    # Debug input check
+    if not isinstance(points, np.ndarray):
+        print("[DEBUG] points is not a numpy array! Type:", type(points))
+        return [], []
+    if points.ndim != 2 or points.shape[1] < 3:
+        print(f"[DEBUG] Invalid pointcloud shape: {points.shape}, expected Nx3 or more.")
+        return [], []
+
+    print(f"[DEBUG] Received pointcloud with {points.shape[0]} points.")
+    print("[DEBUG] Sample points:")
+    print(points[:min(5, len(points))])  # print first 5 rows
+
+    # Convert to Open3D PointCloud
     pc = o3d.geometry.PointCloud()
-    pc.points = o3d.utility.Vector3dVector(points[:, :3])
+    pc.points = o3d.utility.Vector3dVector(points[:, :3])  # ensure it's Nx3
 
-    log_info(f"[Pick] SHIFT+Click to select points in '{title}', press Q to exit.")
-    log_info(f"[Pick] ***close window*** to get selected points logged with ***FULL PRECISION***")
+    if len(pc.points) == 0:
+        log_error("[point picker] Converted Open3D pointcloud is empty!")
+        return [], []
 
-    # create new visualizer with editing enables (-> blocking)
+    # Create new visualizer with editing enables (-> blocking)
     vis = o3d.visualization.VisualizerWithEditing()
-    vis.create_window()
+    vis.create_window(window_name=title)
     # draw pointcloud
-    vis.add_geometry(pc, reset_bounding_box=False)
-    # start blocking, user selects points
-    vis.run()  # user picks points
+    vis.add_geometry(pc, reset_bounding_box=True) # reset camera to fit the pointcloud
+    vis.run()  # user can pick points, BLOCKING until window closed
     vis.destroy_window()
 
     # extract indices of selected points
     picked_indices = vis.get_picked_points()
-    print(f"finished picking points, logging full pcecision coordinates")
+    print(f"Finished picking points, logging full precision coordinates")
+    points_np = np.asarray(pc.points)
 
     # log all selected points with full precision
     if picked_indices:
-        points_np = np.asarray(pc.points)
         coords = [points_np[i] for i in picked_indices]
-        print(f"coords: {coords}")
+        print(f"[DEBUG] Picked indices: {picked_indices}")
         for i, c in zip(picked_indices, coords):
             print(f"[Pick] Full-precision Coordinates of point-Index {i}: ({c[0]:.9f}, {c[1]:.9f}, {c[2]:.9f})")
         return picked_indices, coords
-    return picked_indices
+
+    return picked_indices, []
+
 
 
 
@@ -681,7 +698,7 @@ def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2), fit_camera_to
     poly_3d = [(x, y, 0.0) for x, y in polygon_xy] + [(polygon_xy[0][0], polygon_xy[0][1], 0.0)]
     lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
 
-    log_info(f"draw_2d_polygon: Adding new polygon to visualizer (hash:{polygon_hash})")
+    log_debug(f"[draw_2d_polygon] Initially adding new polygon to visualizer (hash:{polygon_hash})")
     line_set = o3d.geometry.LineSet()
     line_set.points = o3d.utility.Vector3dVector(poly_3d)
     line_set.lines = o3d.utility.Vector2iVector(lines)
