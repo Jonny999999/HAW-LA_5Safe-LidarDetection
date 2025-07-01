@@ -153,6 +153,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
 
         ## old people estimation TODO: drop this
         #estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
+    status_cache.update_status_key("TIMING_MOTION_TRACKING_ALGORITHM", f"{(time.time() - t1)*1000:.0f} ms", trigger_file_update=False)
 
 
     # Visualize both point clouds

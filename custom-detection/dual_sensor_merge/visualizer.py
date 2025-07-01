@@ -16,37 +16,43 @@ visualizer_modes = {}
 #########################
 ######## CONFIG #########
 #########################
-VISUALIZER_DEFAULT_WINDOW_WIDTH = 1920
+# Window size (counts for all windows created)
 #VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
+VISUALIZER_DEFAULT_WINDOW_WIDTH = 1880
 VISUALIZER_DEFAULT_WINDOW_HEIGHT = 2160
-CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED = True
-VISUALIZER_DEFAULT_CAMERA_POSITION = {
+# Custom default camera position
+CUSTOM_DEFAULT_CAMERA__LOAD_STORED_POSITION_ENABLED = True
+# Temporary mode to define the blow position object
+CUSTOM_DEFAULT_CAMERA__SELECT_AND_DUMP_AT_INIT_MODE_ENABLED = False
+CUSTOM_DEFAULT_CAMERA__SELECT_TIMEOUT_SEC = 60
+# Default camera description (determined using above mode)
+CUSTOM_DEFAULT_CAMERA__POSITION_LOADED = {
   "intrinsic": {
-    "width": 1914,
-    "height": 1137,
-    "fx": 984.6708841029068,
-    "fy": 984.6708841029068,
-    "cx": 956.5,
-    "cy": 568.0
+    "width": 1900,
+    "height": 2096,
+    "fx": 1815.1892463321835,
+    "fy": 1815.1892463321835,
+    "cx": 949.5,
+    "cy": 1047.5
   },
   "extrinsic": [
     [
-      -0.6730622953428582,
-      -0.7351171121348872,
-      0.08117867967802239,
-      -0.8071571641729453
+      -0.7024509499068765,
+      -0.6956544212556034,
+      0.15042469598592623,
+      -3.4455552383902632
     ],
     [
-      -0.6322851327318026,
-      0.5149955914727914,
-      -0.5787875704348846,
-      3.20865146732323
+      -0.676031551686384,
+      0.5860467953574598,
+      -0.44668836427172787,
+      4.793792215656059
     ],
     [
-      0.38366998516189654,
-      -0.44088816292803046,
-      -0.8114277357077564,
-      4.39508800354559
+      0.22258482450388878,
+      -0.4154685064343424,
+      -0.8819534659276475,
+      9.491348620600894
     ],
     [
       0.0,
@@ -55,7 +61,7 @@ VISUALIZER_DEFAULT_CAMERA_POSITION = {
       1.0
     ]
   ]
-} 
+}
 
 
 def initialize_visualizer(
@@ -76,13 +82,13 @@ def initialize_visualizer(
     visualizer.update_renderer()
 
     # apply configured camera position
-    if (CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED):
-        apply_camera_parameters(visualizer, VISUALIZER_DEFAULT_CAMERA_POSITION)
+    if (CUSTOM_DEFAULT_CAMERA__LOAD_STORED_POSITION_ENABLED):
+        apply_camera_parameters(visualizer, CUSTOM_DEFAULT_CAMERA__POSITION_LOADED)
 
-    # === uncomment this to create/get the camera position for VISUALIZER_DEFAULT_CAMERA_POSITION ===
-    # pause and manually select the camera position to update the configuration
-    #time.sleep(1)
-    #adjust_and_dump_camera(visualizer)
+    # pause and manually select the camera position for some time and dump info to update the configuration
+    if CUSTOM_DEFAULT_CAMERA__SELECT_AND_DUMP_AT_INIT_MODE_ENABLED:
+        time.sleep(1)
+        adjust_and_dump_camera(visualizer)
 
     # Clear polygon again
     visualizer.clear_geometries()
@@ -120,7 +126,7 @@ def apply_camera_parameters(visualizer, cam_data):
 
 
 
-def adjust_and_dump_camera(visualizer, duration_sec=10):
+def adjust_and_dump_camera(visualizer, duration_sec=60):
     """
     Allows manual camera adjustment for a few seconds and then logs the camera parameters.
     
@@ -223,7 +229,7 @@ def update_visualizer_by_mode(mode, context):
         visualize_dual_frame(context["pointcloud_1_array"], context["pc2_transformed"], vis)
 
     elif mode == "ai":
-        visualize_dual_frame(context["pc_filtered"], context["pointcloud_ai"], vis)
+        visualize_dual_frame(context["pointcloud_ai_input"], context["pointcloud_ai"], vis)
         clusters = context["ai_clusters"]
         for i, cluster in enumerate(clusters):
             draw_bounding_box(
@@ -497,8 +503,8 @@ def draw_cluster_boxes(clusters, visualizer):
 
 
 
-#drawn_bounding_boxes = []  # Global cache of drawn box objects
-_drawn_bounding_boxes_cache = {}  # Global: visualizer_id -> set of boxes
+# Global cache for bounding boxes per visualizer (used to clear previous ones)
+_drawn_bounding_boxes_cache = {}  # Global cache: visualizer_id -> set of drawn box geometries
 def draw_bounding_box(
     pcd,
     visualizer,
@@ -510,33 +516,100 @@ def draw_bounding_box(
     thickness_hack_layer_offset=0.01,
     thickness_hack_layer_count=3
 ):
-    import open3d as o3d
+    """
+    Draws an axis-aligned bounding box around a point cloud or multiple clusters
+    in an Open3D visualizer window. Can simulate thick lines by drawing
+    multiple offset boxes. Supports cache-based clearing of previous boxes.
 
+    Supports:
+        - Single PointCloud (Open3D or NumPy ndarray of shape Nx3)
+        - List of NumPy arrays (each representing a cluster point cloud)
+
+    Parameters:
+        pcd (PointCloud | np.ndarray | List[np.ndarray]):
+            The input point cloud (Open3D or NumPy), or a list of NumPy clusters.
+        pcd: Can be:
+            - open3d.geometry.PointCloud
+            - numpy.ndarray (Nx3)
+            - list or tuple of the above
+
+        visualizer (o3d.visualization.Visualizer):
+            The Open3D visualizer instance to draw in.
+
+        color (tuple of float):
+            RGB color tuple in range [0.0, 1.0] for the bounding box.
+
+        min_volume_m3 (float):
+            Minimum bounding box volume (in m³). Smaller boxes are expanded.
+
+        clear_existing (bool):
+            Whether to remove all previously drawn boxes in this visualizer.
+
+        render_now (bool):
+            Whether to update the visualizer window immediately.
+
+        thick_lines_enabled (bool):
+            If True, draws multiple offset boxes to simulate thick lines.
+
+        thickness_hack_layer_offset (float):
+            Offset distance between "thickness" box layers (in meters).
+
+        thickness_hack_layer_count (int):
+            Number of fake thickness layers (including center box).
+            Example: 3 = center + 1 inner + 1 outer.
+    """
     if visualizer is None:
         return
 
     vis_id = id(visualizer)
 
-    # Create visualizer-specific cache if it doesn't exist
+    # === Global cache of drawn boxes per visualizer ===
+    global _drawn_bounding_boxes_cache
+    if '_drawn_bounding_boxes_cache' not in globals():
+        _drawn_bounding_boxes_cache = {}
     if vis_id not in _drawn_bounding_boxes_cache:
         _drawn_bounding_boxes_cache[vis_id] = set()
 
     vis_cache = _drawn_bounding_boxes_cache[vis_id]
 
-    # === Clear all previously drawn boxes for this visualizer ===
+    # === Clear old boxes if requested ===
     if clear_existing:
         for box in vis_cache:
             try:
                 visualizer.remove_geometry(box, reset_bounding_box=False)
             except Exception as e:
-                log_warn(f"[draw_bounding_boxes] Failed to remove box: {e}")
+                log_warn(f"[draw_bounding_box] Failed to remove box: {e}")
         vis_cache.clear()
 
-    # === Draw new box (if point cloud provided) ===
-    if pcd is not None:
+    # === Ensure we're working with a list of valid pointclouds ===
+    inputs = pcd
+    if inputs is None:
+        return
+    if not isinstance(inputs, (list, tuple)):
+        inputs = [inputs]
+
+    for entry in inputs:
+        if entry is None:
+            continue
+        # Convert numpy array to open3d PointCloud
+        if isinstance(entry, np.ndarray):
+            if entry.shape[0] == 0:
+                continue  # skip empty array
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(entry.astype(np.float64))
+        elif isinstance(entry, o3d.geometry.PointCloud):
+            if len(entry.points) == 0:
+                continue  # skip empty pointcloud
+            pcd = entry
+        else:
+            log_warn(f"[draw_bounding_box] Unsupported input type: {type(entry)}")
+            continue
+
+        # === Compute bounding box ===
         bbox = pcd.get_axis_aligned_bounding_box()
         volume = bbox.volume()
 
+        # Expand bbox to minimum volume if needed
         if min_volume_m3 > 0 and volume < min_volume_m3:
             center = bbox.get_center()
             base_size = (min_volume_m3 / 3.0) ** (1/3)
@@ -547,8 +620,8 @@ def draw_bounding_box(
                 max_bound=(center[0] + half_xy, center[1] + half_xy, center[2] + half_z)
             )
 
+        # === Generate thick boxes if enabled ===
         boxes_to_draw = []
-
         if thick_lines_enabled:
             center = bbox.get_center()
             extents = bbox.get_extent()
@@ -564,10 +637,12 @@ def draw_bounding_box(
             bbox.color = color
             boxes_to_draw.append(bbox)
 
+        # === Add boxes to visualizer and cache ===
         for box in boxes_to_draw:
             visualizer.add_geometry(box, reset_bounding_box=False)
             vis_cache.add(box)
 
+    # === Render visualizer update ===
     if render_now:
         visualizer.poll_events()
         visualizer.update_renderer()
