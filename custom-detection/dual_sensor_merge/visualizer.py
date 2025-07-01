@@ -223,7 +223,7 @@ def update_visualizer_by_mode(mode, context):
         visualize_dual_frame(context["pointcloud_1_array"], context["pc2_transformed"], vis)
 
     elif mode == "ai":
-        visualize_dual_frame(context["pc_filtered"], context["pointcloud_ai"], vis)
+        visualize_dual_frame(context["pointcloud_ai_input"], context["pointcloud_ai"], vis)
         clusters = context["ai_clusters"]
         for i, cluster in enumerate(clusters):
             draw_bounding_box(
@@ -497,8 +497,9 @@ def draw_cluster_boxes(clusters, visualizer):
 
 
 
-#drawn_bounding_boxes = []  # Global cache of drawn box objects
-_drawn_bounding_boxes_cache = {}  # Global: visualizer_id -> set of boxes
+# Global cache for bounding boxes per visualizer (used to clear previous ones)
+_drawn_bounding_boxes_cache = {}  # visualizer_id -> set of AxisAlignedBoundingBox objects
+
 def draw_bounding_box(
     pcd,
     visualizer,
@@ -510,64 +511,127 @@ def draw_bounding_box(
     thickness_hack_layer_offset=0.01,
     thickness_hack_layer_count=3
 ):
-    import open3d as o3d
+    """
+    Draws an axis-aligned bounding box around a point cloud or multiple clusters
+    in an Open3D visualizer window. Can simulate thick lines by drawing
+    multiple offset boxes. Supports cache-based clearing of previous boxes.
 
+    Supports:
+        - Single PointCloud (Open3D or NumPy ndarray of shape Nx3)
+        - List of NumPy arrays (each representing a cluster point cloud)
+
+    Parameters:
+        pcd (PointCloud | np.ndarray | List[np.ndarray]):
+            The input point cloud (Open3D or NumPy), or a list of NumPy clusters.
+
+        visualizer (o3d.visualization.Visualizer):
+            The Open3D visualizer instance to draw in.
+
+        color (tuple of float):
+            RGB color tuple in range [0.0, 1.0] for the bounding box.
+
+        min_volume_m3 (float):
+            Minimum bounding box volume (in m³). Smaller boxes are expanded.
+
+        clear_existing (bool):
+            Whether to remove all previously drawn boxes in this visualizer.
+
+        render_now (bool):
+            Whether to update the visualizer window immediately.
+
+        thick_lines_enabled (bool):
+            If True, draws multiple offset boxes to simulate thick lines.
+
+        thickness_hack_layer_offset (float):
+            Offset distance between "thickness" box layers (in meters).
+
+        thickness_hack_layer_count (int):
+            Number of fake thickness layers (including center box).
+            Example: 3 = center + 1 inner + 1 outer.
+    """
     if visualizer is None:
         return
 
     vis_id = id(visualizer)
 
-    # Create visualizer-specific cache if it doesn't exist
+    # Initialize box cache for this visualizer if needed
     if vis_id not in _drawn_bounding_boxes_cache:
         _drawn_bounding_boxes_cache[vis_id] = set()
 
     vis_cache = _drawn_bounding_boxes_cache[vis_id]
 
-    # === Clear all previously drawn boxes for this visualizer ===
+    # === Multi-cluster (list of point arrays): call recursively ===
+    if isinstance(pcd, list):
+        for i, cluster_np in enumerate(pcd):
+            draw_bounding_box(
+                pcd=cluster_np,
+                visualizer=visualizer,
+                color=color,
+                min_volume_m3=min_volume_m3,
+                clear_existing=(i == 0 and clear_existing),
+                render_now=(i == len(pcd) - 1 and render_now),
+                thick_lines_enabled=thick_lines_enabled,
+                thickness_hack_layer_offset=thickness_hack_layer_offset,
+                thickness_hack_layer_count=thickness_hack_layer_count
+            )
+        return
+
+    # === Convert NumPy arrays to Open3D PointClouds ===
+    if isinstance(pcd, np.ndarray):
+        if pcd.ndim != 2 or pcd.shape[1] != 3:
+            print(f"[draw_bounding_box] Invalid ndarray shape: {pcd.shape}")
+            return
+        cloud = o3d.geometry.PointCloud()
+        cloud.points = o3d.utility.Vector3dVector(pcd)
+        pcd = cloud
+
+    # === Remove previously drawn boxes if requested ===
     if clear_existing:
         for box in vis_cache:
             try:
                 visualizer.remove_geometry(box, reset_bounding_box=False)
             except Exception as e:
-                log_warn(f"[draw_bounding_boxes] Failed to remove box: {e}")
+                print(f"[draw_bounding_boxes] Failed to remove box: {e}")
         vis_cache.clear()
 
-    # === Draw new box (if point cloud provided) ===
-    if pcd is not None:
-        bbox = pcd.get_axis_aligned_bounding_box()
-        volume = bbox.volume()
+    # === Get bounding box and possibly expand it ===
+    bbox = pcd.get_axis_aligned_bounding_box()
+    volume = bbox.volume()
 
-        if min_volume_m3 > 0 and volume < min_volume_m3:
-            center = bbox.get_center()
-            base_size = (min_volume_m3 / 3.0) ** (1/3)
-            half_xy = base_size / 2
-            half_z = (3.0 * base_size) / 2
-            bbox = o3d.geometry.AxisAlignedBoundingBox(
-                min_bound=(center[0] - half_xy, center[1] - half_xy, center[2] - half_z),
-                max_bound=(center[0] + half_xy, center[1] + half_xy, center[2] + half_z)
-            )
+    if min_volume_m3 > 0 and volume < min_volume_m3:
+        center = bbox.get_center()
+        base_size = (min_volume_m3 / 3.0) ** (1 / 3)  # create box with 1:1:3 ratio (taller z)
+        half_xy = base_size / 2
+        half_z = (3.0 * base_size) / 2
+        bbox = o3d.geometry.AxisAlignedBoundingBox(
+            min_bound=(center[0] - half_xy, center[1] - half_xy, center[2] - half_z),
+            max_bound=(center[0] + half_xy, center[1] + half_xy, center[2] + half_z)
+        )
 
-        boxes_to_draw = []
+    # === Simulate thick lines with offset boxes ===
+    boxes_to_draw = []
 
-        if thick_lines_enabled:
-            center = bbox.get_center()
-            extents = bbox.get_extent()
-            for i in range(-thickness_hack_layer_count//2, thickness_hack_layer_count//2 + 1):
-                scale = 1.0 + i * thickness_hack_layer_offset
-                half_ext = 0.5 * extents * scale
-                min_bound = center - half_ext
-                max_bound = center + half_ext
-                hack_box = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
-                hack_box.color = color
-                boxes_to_draw.append(hack_box)
-        else:
-            bbox.color = color
-            boxes_to_draw.append(bbox)
+    if thick_lines_enabled:
+        center = bbox.get_center()
+        extents = bbox.get_extent()
+        for i in range(-thickness_hack_layer_count // 2, thickness_hack_layer_count // 2 + 1):
+            scale = 1.0 + i * thickness_hack_layer_offset
+            half_ext = 0.5 * extents * scale
+            min_bound = center - half_ext
+            max_bound = center + half_ext
+            hack_box = o3d.geometry.AxisAlignedBoundingBox(min_bound, max_bound)
+            hack_box.color = color
+            boxes_to_draw.append(hack_box)
+    else:
+        bbox.color = color
+        boxes_to_draw.append(bbox)
 
-        for box in boxes_to_draw:
-            visualizer.add_geometry(box, reset_bounding_box=False)
-            vis_cache.add(box)
+    # === Add boxes to visualizer and cache ===
+    for box in boxes_to_draw:
+        visualizer.add_geometry(box, reset_bounding_box=False)
+        vis_cache.add(box)
 
+    # === Render visualizer update ===
     if render_now:
         visualizer.poll_events()
         visualizer.update_renderer()

@@ -11,7 +11,6 @@ import queue
 import multiprocessing
 from multiprocessing import Process, Queue, Manager, Lock
 from types import SimpleNamespace
-from point_net_detector import PointCloudPeopleDetector
 
 
 # Imports from custom files
@@ -27,6 +26,7 @@ import filters as filters
 import exporter
 from status_file import GlobalStatusCache
 from tcp_senderthread import dashboard_tcp_server
+from point_net_detector import ai_detection_thread
 
 
 
@@ -48,6 +48,8 @@ from tcp_senderthread import dashboard_tcp_server
 
 
 def main():
+    # change multiprocessing spawn method (needed for CUDA to work in a sub process otside main)
+    multiprocessing.set_start_method("spawn", force=True)
 
     ############################
     ####### Declarations #######
@@ -74,11 +76,19 @@ def main():
     synced_frame_queue = Queue(maxsize=2)
 
 
+    # === Queue 4: transformed, merged and filtered pointclouds ===
+    # to pass input to ai-model process
+    merged_filtered_pointcoud_queue = Queue(maxsize=2)
+
+    # === Queue 5: ai model output (clusters, pointcloud) ===
+    # get ai-model result back to main thread to visualize the result
+    ai_model_output_queue = Queue(maxsize=2)
+
+
     # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
     # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
 
-    people_detector = PointCloudPeopleDetector(model_path="model.pth")
 
     # === Setup shared memory objects ===
     manager = Manager()
@@ -181,9 +191,22 @@ def main():
     )).start()
 
 
+    # === Start process for Detection with AI-MODEL ===
+    Process(target=ai_detection_thread, args=(
+        merged_filtered_pointcoud_queue,
+        ai_model_output_queue,
+        status_cache_class_shared_params
+    )).start()
+
+
     # === Start Thread for terminal input ===
     # create thread for parsing terminal user input (payback_control)
     start_playback_input_thread()
+
+
+    # Variables
+    # track last ai output (visualize old output when model too slow)
+    last_ai_output = (0, np.empty((0, 3)), [], np.empty((0, 3)))  # 0 people, empty (Nx3) array, empty clusters
 
 
 
@@ -227,14 +250,30 @@ def main():
         # also drop points that are above certain z coordinate (1m)
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
-
-        # === Run PointNet AI Model and Clustering
-        num_people, Ai_HumanPoints, ai_clusters = people_detector.detect(pointcloud_merged_filtered_array)
-        status_cache.update_status_key("AI DETECTION PEOPLE COUNT", f"{num_people}")
-        
-
         # === Update cached pointcloud that is sent to dashboard via TCP ===
         status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
+
+        # send pointcloud to AI-model thread
+        # Drop oldest if full
+        if merged_filtered_pointcoud_queue.full():
+            try:
+                merged_filtered_pointcoud_queue.get_nowait()
+                log_warn("Dropped oldest frame from full queue")
+            except Empty:
+                log_warn("Queue was full but empty??")
+        # Now insert
+        merged_filtered_pointcoud_queue.put_nowait(pointcloud_merged_filtered_array)
+
+
+        # receive last AI-detection result from the AI-model thread
+        try:
+            last_ai_output = ai_model_output_queue.get_nowait()
+        except queue.Empty:
+            log_warn("[main thread] AI-thread output queue empty -> useing prev result (model not processing fast enough?)")
+            pass  # keep using the previous last_ai_output
+        # extract AI output variables from the queue object
+        ai_numPeople, ai_HumanPoints, ai_clusters, ai_pointcloud_input = last_ai_output
+
 
         # === Update visualizer windows ===
         # Define context with all needed arrays for visualization functions
@@ -243,7 +282,8 @@ def main():
             "pointcloud_2_array": pointcloud_2_array,
             "pointcloud_1_o3d": pointcloud_1_o3d,
             "pointcloud_2_o3d": pointcloud_2_o3d,
-            "pointcloud_ai": Ai_HumanPoints,
+            "pointcloud_ai": ai_HumanPoints,
+            "pointcloud_ai_input": ai_pointcloud_input,
             "ai_clusters": ai_clusters,
             "pc2_transformed": np.asarray(pointcloud_2_transformed_o3d.points),
             "pc_merged": pointcloud_merged_array,
