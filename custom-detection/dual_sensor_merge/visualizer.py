@@ -16,37 +16,43 @@ visualizer_modes = {}
 #########################
 ######## CONFIG #########
 #########################
-VISUALIZER_DEFAULT_WINDOW_WIDTH = 1920
+# Window size (counts for all windows created)
 #VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
+VISUALIZER_DEFAULT_WINDOW_WIDTH = 1880
 VISUALIZER_DEFAULT_WINDOW_HEIGHT = 2160
-CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED = True
-VISUALIZER_DEFAULT_CAMERA_POSITION = {
+# Custom default camera position
+CUSTOM_DEFAULT_CAMERA__LOAD_STORED_POSITION_ENABLED = True
+# Temporary mode to define the blow position object
+CUSTOM_DEFAULT_CAMERA__SELECT_AND_DUMP_AT_INIT_MODE_ENABLED = False
+CUSTOM_DEFAULT_CAMERA__SELECT_TIMEOUT_SEC = 60
+# Default camera description (determined using above mode)
+CUSTOM_DEFAULT_CAMERA__POSITION_LOADED = {
   "intrinsic": {
-    "width": 1914,
-    "height": 1137,
-    "fx": 984.6708841029068,
-    "fy": 984.6708841029068,
-    "cx": 956.5,
-    "cy": 568.0
+    "width": 1900,
+    "height": 2096,
+    "fx": 1815.1892463321835,
+    "fy": 1815.1892463321835,
+    "cx": 949.5,
+    "cy": 1047.5
   },
   "extrinsic": [
     [
-      -0.6730622953428582,
-      -0.7351171121348872,
-      0.08117867967802239,
-      -0.8071571641729453
+      -0.7024509499068765,
+      -0.6956544212556034,
+      0.15042469598592623,
+      -3.4455552383902632
     ],
     [
-      -0.6322851327318026,
-      0.5149955914727914,
-      -0.5787875704348846,
-      3.20865146732323
+      -0.676031551686384,
+      0.5860467953574598,
+      -0.44668836427172787,
+      4.793792215656059
     ],
     [
-      0.38366998516189654,
-      -0.44088816292803046,
-      -0.8114277357077564,
-      4.39508800354559
+      0.22258482450388878,
+      -0.4154685064343424,
+      -0.8819534659276475,
+      9.491348620600894
     ],
     [
       0.0,
@@ -55,7 +61,7 @@ VISUALIZER_DEFAULT_CAMERA_POSITION = {
       1.0
     ]
   ]
-} 
+}
 
 
 def initialize_visualizer(
@@ -76,13 +82,13 @@ def initialize_visualizer(
     visualizer.update_renderer()
 
     # apply configured camera position
-    if (CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED):
-        apply_camera_parameters(visualizer, VISUALIZER_DEFAULT_CAMERA_POSITION)
+    if (CUSTOM_DEFAULT_CAMERA__LOAD_STORED_POSITION_ENABLED):
+        apply_camera_parameters(visualizer, CUSTOM_DEFAULT_CAMERA__POSITION_LOADED)
 
-    # === uncomment this to create/get the camera position for VISUALIZER_DEFAULT_CAMERA_POSITION ===
-    # pause and manually select the camera position to update the configuration
-    #time.sleep(1)
-    #adjust_and_dump_camera(visualizer)
+    # pause and manually select the camera position for some time and dump info to update the configuration
+    if CUSTOM_DEFAULT_CAMERA__SELECT_AND_DUMP_AT_INIT_MODE_ENABLED:
+        time.sleep(1)
+        adjust_and_dump_camera(visualizer)
 
     # Clear polygon again
     visualizer.clear_geometries()
@@ -120,7 +126,7 @@ def apply_camera_parameters(visualizer, cam_data):
 
 
 
-def adjust_and_dump_camera(visualizer, duration_sec=10):
+def adjust_and_dump_camera(visualizer, duration_sec=60):
     """
     Allows manual camera adjustment for a few seconds and then logs the camera parameters.
     
