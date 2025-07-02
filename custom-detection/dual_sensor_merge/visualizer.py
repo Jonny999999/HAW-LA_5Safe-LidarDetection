@@ -236,6 +236,9 @@ def update_visualizer_by_mode(mode, context):
         # update vis with pointclouds and boxes
         visualize_dual_frame(context["pointcloud_ai_input"], context["pointcloud_ai"], vis)
         clusters = context["ai_clusters"]
+        # clear existing clusters first (useful if no clusters were found)
+        draw_bounding_box(pcd=[], visualizer=vis, clear_existing=True, render_now=False)
+        # draw all clusters, update render only for the last one
         for i, cluster in enumerate(clusters):
             draw_bounding_box(
                 pcd=cluster,
@@ -246,7 +249,7 @@ def update_visualizer_by_mode(mode, context):
                 render_now=(i == len(clusters) - 1),
                 thick_lines_enabled=True,  # or False depending on your needs
                 thickness_hack_layer_offset=0.01,
-                thickness_hack_layer_count=3
+                thickness_hack_layer_count=4
             )
 
     elif mode == "merged_filtered":
@@ -546,6 +549,8 @@ def draw_bounding_box(
     in an Open3D visualizer window. Can simulate thick lines by drawing
     multiple offset boxes. Supports cache-based clearing of previous boxes.
 
+    Note: to only clear all boxes in visualizer set pcd=[ ] or None, clear_existing=True and render_now=True
+
     Supports:
         - Single PointCloud (Open3D or NumPy ndarray of shape Nx3)
         - List of NumPy arrays (each representing a cluster point cloud)
@@ -608,8 +613,10 @@ def draw_bounding_box(
 
     # === Ensure we're working with a list of valid pointclouds ===
     inputs = pcd
-    if inputs is None:
-        return
+    if inputs is None: 
+        # when no clusters are provided, we continue to apply the eventual box deletion if requested
+        # empty array will skip the for loop but still update the render at the end if requested
+        inputs = []
     if not isinstance(inputs, (list, tuple)):
         inputs = [inputs]
 
