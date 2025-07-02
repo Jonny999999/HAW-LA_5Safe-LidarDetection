@@ -5,13 +5,35 @@
 # Restarts everything only when the Python script exits.
 
 # --- Configuration ---
-PYTHON_SCRIPT_FOLDER="/home/mablee/HAW-LA_5Safe-LidarDetection/custom-detection/dual_sensor_merge"
+REPO_ROOT="$HOME/git/HAW-LA_5Safe-LidarDetection"
+
+PYTHON_SCRIPT_FOLDER="$REPO_ROOT/lidar_system"
 PYTHON_SCRIPT_NAME="main.py"
 
-TERMINAL_FOLDER="/home/mablee/HAW-LA_5Safe-LidarDetection/"
-TERMINAL_SCRIPT="./scripts/watch_status_json_file.sh"
+TERMINAL_SCRIPT="$REPO_ROOT/scripts/watch_status_json_file.sh"
+
+PYTHON_EXECUTABLE="/usr/bin/python3.10"
+#PYTHON_EXECUTABLE="python"
+#PYTHON_VENV_CMD="source ~/python-envs/py3.10-5Safe/bin/activate" # command run before starting the python script
 
 export DISPLAY=:0  # Needed for GUI and xterm
+
+TERMINAL_STARTUP_DELAY_SECONDS=10
+
+
+# === Cleanup function on exit (e.g. CTRL+C) ===
+cleanup_on_exit() {
+    echo ""
+    echo "========================================================="
+    echo "[Auto-Restart] Caught termination signal, cleaning up..."
+    echo "========================================================="
+    killall "$PYTHON_EXECUTABLE" 2>/dev/null
+    killall xterm 2>/dev/null
+    echo "killed python and xterm..."
+    exit 0
+}
+# Trap CTRL+C (SIGINT), SIGTERM, and EXIT
+trap cleanup_on_exit SIGINT SIGTERM
 
 
 
@@ -40,9 +62,10 @@ done
 
 
 # Clean up old processes
-killall python3.10 2>/dev/null
+killall "$PYTHON_EXECUTABLE"
 killall xterm 2>/dev/null
 
+# Start python script + terminal, kill and restart both on crash
 while true; do
     echo "======================================"
     echo "[Auto-Restart] Starting Python GUI..."
@@ -50,12 +73,17 @@ while true; do
 
     cd "$PYTHON_SCRIPT_FOLDER"
 
+    # start venv if configured
+    if [[ -n "$PYTHON_VENV_CMD" ]]; then
+        echo "Starting python venv using cmd: $PYTHON_VENV_CMD"
+        eval "$PYTHON_VENV_CMD"
+    fi
     # Launch Python GUI in background, so we can start xterm after delay
-    /usr/bin/python3.10 "$PYTHON_SCRIPT_NAME" &
+    "$PYTHON_EXECUTABLE" "$PYTHON_SCRIPT_NAME" &
     PY_PID=$!
 
     # Wait a bit to ensure the GUI starts
-    sleep 10
+    sleep $TERMINAL_STARTUP_DELAY_SECONDS
 
     echo "===================================================="
     echo "[Auto-Restart] Starting xterm showing status.json..."

@@ -27,24 +27,24 @@ UDP_PORT_SENSOR2 = 5004
 
 
 #=== PCAP Mode config ===
-#PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
-#PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
-#PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE = "../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
+#PCAP_FILE = "../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
+#PCAP_FILE = "../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
 
-#PCAP_FILE_1 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
-#PCAP_FILE_2 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE_1 = "../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
+#PCAP_FILE_2 = "../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
 
-#PCAP_FILE_1 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
-#PCAP_FILE_2 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
+#PCAP_FILE_1 = "../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE_2 = "../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
 
-#PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
-#PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
+#PCAP_FILE_1 = "../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
+#PCAP_FILE_2 = "../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
 # manually correct delay between recording start of each file:
 PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
 PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
-PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
-PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
+PCAP_FILE_1 = "../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
+PCAP_FILE_2 = "../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
 #PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
 #PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 

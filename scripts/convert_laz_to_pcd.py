@@ -2,6 +2,8 @@ import os
 import laspy
 import numpy as np
 
+# USAGE: manually adjust the paths in variables at the end of the file
+
 def convert_laz_to_pcd(input_dir, output_dir):
     os.makedirs(output_dir, exist_ok=True)
 

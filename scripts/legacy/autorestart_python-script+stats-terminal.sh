@@ -4,12 +4,17 @@
 # This script repeatedly starts the main Python GUI and a status-monitoring terminal.
 # Its a workaround for long-term stability issues by restarting everything every 10 minutes.
 
-# === config ===
-PYTHON_SCRIPT_FOLDER="/home/mablee/HAW-LA_5Safe-LidarDetection/custom-detection/dual_sensor_merge"
+# --- Configuration ---
+REPO_ROOT="$HOME/git/HAW-LA_5Safe-LidarDetection"
+
+PYTHON_SCRIPT_FOLDER="$REPO_ROOT/lidar_system"
 PYTHON_SCRIPT_NAME="main.py"
 
-TERMINAL_FOLDER="/home/mablee/HAW-LA_5Safe-LidarDetection/"
-TERMINAL_SCRIPT="./scripts/watch_status_json_file.sh"
+TERMINAL_FOLDER="$REPO_ROOT"
+TERMINAL_SCRIPT="$REPO_ROOT/scripts/watch_status_json_file.sh"
+
+PYTHON_EXECUTABLE="python"
+    #/usr/bin/python3.10 $PYTHON_SCRIPT_NAME &
 
 RESTART_INTERVAL=10m
 
@@ -25,7 +30,8 @@ while true; do
 
     # --- Launch Python GUI ---
     cd $PYTHON_SCRIPT_FOLDER
-    /usr/bin/python3.10 $PYTHON_SCRIPT_NAME &
+    source ~/python-envs/py3.10-5Safe/bin/activate
+    "$PYTHON_EXECUTABLE" "$PYTHON_SCRIPT_NAME" &
 
     # --- Wait for GUI to launch ---
     sleep 5  # Ensure the Python GUI window has time to open
