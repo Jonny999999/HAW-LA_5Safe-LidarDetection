@@ -229,6 +229,11 @@ def update_visualizer_by_mode(mode, context):
         visualize_dual_frame(context["pointcloud_1_array"], context["pc2_transformed"], vis)
 
     elif mode == "ai":
+        # check if mode is enabled
+        if not config.AI_PEOPLE_DETECTION_ENABLED:
+            log_error("[update_visualizer_by_mode] window mode 'ai' but ai-detection is disabled (AI_PEOPLE_DETECTION_ENABLED is set to false in config) -> not updating anything")
+            return
+        # update vis with pointclouds and boxes
         visualize_dual_frame(context["pointcloud_ai_input"], context["pointcloud_ai"], vis)
         clusters = context["ai_clusters"]
         for i, cluster in enumerate(clusters):
@@ -248,6 +253,9 @@ def update_visualizer_by_mode(mode, context):
         visualize_dual_frame(context["pc_merged"], context["pc_filtered"], vis)
 
     elif mode == "motion_detection":
+        # only check if mode is even enabled (otherwise updated in processing.py)
+        if not config.MOTION_DETECTION_ALGORITHM_ENABLED:
+            log_error("[update_visualizer_by_mode] window mode 'motion_detection' but detection is disabled (MOTION_DETECTION_ALGORITHM_ENABLED is set to false in config) -> window will stay blank")
         # Do not render here — handled externally
         pass
 

@@ -37,14 +37,14 @@ UDP_PORT_SENSOR2 = 5004
 #PCAP_FILE_1 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
 #PCAP_FILE_2 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
 
-PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
-PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
+#PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
+#PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
 # manually correct delay between recording start of each file:
 PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
 PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
-#PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
-#PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
+PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
+PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
 #PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
 #PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
@@ -85,10 +85,15 @@ STATUS_FILE_PATH = "output/status.json"
 # Ignore some keys to simplyfy the output on demand:
 STATUS_FILE_KEYS_NOT_ADDED_TO_FILE = ["LOG_LAST_ERRORS", "TIMING_FRAMERATE_DECODER_1", "TIMING_FRAMERATE_DECODER_2", "TIMING_PROCESSING_DURATION_MS", "LOG_LAST_WARNINGS", "TIMING_MOTION_DETECTION__APPLY_FILTERS", "TIMING_MOTION_DETECTION__CLUSTER_DETECTION", "TIMING_MOTION_DETECTION__VISUALIZER_UPDATE" ]
 
+# starts TCP socket poviding gobal status info and pointclouds for a dashboard (currently not relable)
 DASHBOARD_TCP_SERVER_ENABLED = False
 
 # enable motion+people detection and tracking
-MOTION_DETECTION_ENABLED = True
+MOTION_DETECTION_ALGORITHM_ENABLED = True
+
+# enable ai-based detection using trained model
+AI_PEOPLE_DETECTION_ENABLED = True
+
 
 # === Visualizer window config ===
 # Options:
@@ -100,7 +105,7 @@ MOTION_DETECTION_ENABLED = True
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
 VISUALIZER_WINDOW_1_MODE = "motion_detection"
-VISUALIZER_WINDOW_2_MODE = "ai"
+VISUALIZER_WINDOW_2_MODE = "none"
 VISUALIZER_WINDOW_3_MODE = "none"
 #VISUALIZER_WINDOW_3_MODE = "none"
 

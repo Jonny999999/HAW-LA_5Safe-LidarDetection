@@ -178,11 +178,12 @@ def main():
 
 
     # === Start process for Detection with AI-MODEL ===
-    Process(target=ai_detection_thread, args=(
-        merged_filtered_pointcoud_queue,
-        ai_model_output_queue,
-        status_cache_class_shared_params
-    )).start()
+    if config.AI_PEOPLE_DETECTION_ENABLED:
+        Process(target=ai_detection_thread, args=(
+            merged_filtered_pointcoud_queue,
+            ai_model_output_queue,
+            status_cache_class_shared_params
+        )).start()
 
 
     # === Start Thread for terminal input ===
@@ -193,6 +194,10 @@ def main():
     # Variables
     # track last ai output (visualize old output when model too slow)
     last_ai_output = (0, np.empty((0, 3)), [], np.empty((0, 3)))  # 0 people, empty (Nx3) array, empty clusters
+    ai_HumanPoints = None
+    ai_pointcloud_input = None
+    ai_clusters = None
+
 
 
 
@@ -243,26 +248,28 @@ def main():
 
         # === send pointcloud to AI-model thread ===
         # Drop oldest if full
-        if merged_filtered_pointcoud_queue.full():
-            try:
-                merged_filtered_pointcoud_queue.get_nowait()
-                log_warn("[main] AI-thread input queue full -> dropping oldest frame (model not processing fast enough?)")
-            except Empty:
-                log_warn("Queue was full but empty??")
-        # Now insert
-        merged_filtered_pointcoud_queue.put_nowait(pointcloud_merged_filtered_array)
+        if config.AI_PEOPLE_DETECTION_ENABLED:
+            if merged_filtered_pointcoud_queue.full():
+                try:
+                    merged_filtered_pointcoud_queue.get_nowait()
+                    log_warn("[main] AI-thread input queue full -> dropping oldest frame (model not processing fast enough?)")
+                except Empty:
+                    log_warn("Queue was full but empty??")
+            # Now insert
+            merged_filtered_pointcoud_queue.put_nowait(pointcloud_merged_filtered_array)
 
 
         # === receive last AI-detection result from the AI-model thread ===
         # note this has at least 1 frame delay compared to merged pointcloud 
         #  (also returns input pointcloud so visualized pointclouds are in sync)
-        try:
-            last_ai_output = ai_model_output_queue.get_nowait()
-        except queue.Empty:
-            log_warn("[main] AI-thread output queue empty -> using prev result in vis (model not processing fast enough?)")
-            pass  # keep using the previous last_ai_output
-        # extract AI output variables from the queue object
-        ai_numPeople, ai_HumanPoints, ai_clusters, ai_pointcloud_input = last_ai_output
+        if config.AI_PEOPLE_DETECTION_ENABLED:
+            try:
+                last_ai_output = ai_model_output_queue.get_nowait()
+            except queue.Empty:
+                log_warn("[main] AI-thread output queue empty -> using prev result in vis (model not processing fast enough?)")
+                pass  # keep using the previous last_ai_output
+            # extract AI output variables from the queue object
+            ai_numPeople, ai_HumanPoints, ai_clusters, ai_pointcloud_input = last_ai_output
 
 
         # === Update visualizer windows ===
@@ -287,7 +294,7 @@ def main():
 
 
         # === run Motion Detection Algorithm ===
-        if config.MOTION_DETECTION_ENABLED:
+        if config.MOTION_DETECTION_ALGORITHM_ENABLED:
             # determine which visualizer window is configured to display the motion detection output
             # run motion detection
             process_and_visualize_latest_frame(context["pc_filtered"], get_visualizer_by_mode("motion_detection"), status_cache)
