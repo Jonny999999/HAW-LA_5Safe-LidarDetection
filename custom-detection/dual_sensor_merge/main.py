@@ -11,7 +11,6 @@ import queue
 import multiprocessing
 from multiprocessing import Process, Queue, Manager, Lock
 from types import SimpleNamespace
-from point_net_detector import PointCloudPeopleDetector
 
 
 # Imports from custom files
@@ -27,27 +26,16 @@ import filters as filters
 import exporter
 from status_file import GlobalStatusCache
 from tcp_senderthread import dashboard_tcp_server
+from point_net_detector import ai_detection_thread
 
-
-
-
-
-
-# TODO 2025.06.03:
-#   - fix: exit correctly, finish UDP socket due to error OSError: [Errno 98] Address already in use after restarting in UDP mode
-#   - fix: random gui crash and sync fail (same as sensor disconnected), not happening when debug output on
-#   - remove timeout no data
-#   - fallback to 1 sensor if second one not sending
-#   - visualization interfacae
-#   - improved people tracking
-#   - loglevels?
-# 
 
 
 
 
 
 def main():
+    # change multiprocessing spawn method (needed for CUDA to work in a sub process otside main)
+    multiprocessing.set_start_method("spawn", force=True)
 
     ############################
     ####### Declarations #######
@@ -74,11 +62,19 @@ def main():
     synced_frame_queue = Queue(maxsize=2)
 
 
+    # === Queue 4: transformed, merged and filtered pointclouds ===
+    # to pass input to ai-model process
+    merged_filtered_pointcoud_queue = Queue(maxsize=2)
+
+    # === Queue 5: ai model output (clusters, pointcloud) ===
+    # get ai-model result back to main thread to visualize the result
+    ai_model_output_queue = Queue(maxsize=2)
+
+
     # Exporter class can export Frames in LAZ Format. Saving is enabled through Config File.
     # Enabling the Config throgh FILE_EXPORT_ENABLE = True will clear the output directory on initializing an exporter object
     LazFileSave = exporter.LazFrameExporter(output_dir="output/laz", skip_n_frames = 2)
 
-    people_detector = PointCloudPeopleDetector(model_path="model.pth")
 
     # === Setup shared memory objects ===
     manager = Manager()
@@ -181,9 +177,27 @@ def main():
     )).start()
 
 
+    # === Start process for Detection with AI-MODEL ===
+    if config.AI_PEOPLE_DETECTION_ENABLED:
+        Process(target=ai_detection_thread, args=(
+            merged_filtered_pointcoud_queue,
+            ai_model_output_queue,
+            status_cache_class_shared_params
+        )).start()
+
+
     # === Start Thread for terminal input ===
     # create thread for parsing terminal user input (payback_control)
     start_playback_input_thread()
+
+
+    # Variables
+    # track last ai output (visualize old output when model too slow)
+    last_ai_output = (0, np.empty((0, 3)), [], np.empty((0, 3)))  # 0 people, empty (Nx3) array, empty clusters
+    ai_HumanPoints = None
+    ai_pointcloud_input = None
+    ai_clusters = None
+
 
 
 
@@ -201,7 +215,8 @@ def main():
     # handle play/pause/launch-point-picker
     while True:
         #=== get synced pointcloud from queue ===
-        stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() # TODO: add timeout here to stay responsive when no data received?
+        # TODO: add timeout here to stay responsive when no data received?
+        stamp, pointcloud_1_array, pointcloud_2_array = synced_frame_queue.get() 
         stats_processing_start_time = time.time()
 
         # splice down pc1 and pc2 to XYZ Coordinates
@@ -227,14 +242,35 @@ def main():
         # also drop points that are above certain z coordinate (1m)
         pointcloud_merged_filtered_array = filters.crop_points_within_xy_polygon(pointcloud_merged_array, polygon_xy=config.CROP_POINTCLOUD_POLYGON, visualizer=get_visualizer_by_mode("merged_filtered"), draw_box=True, z_max_height_threshold=1)
 
-
-        # === Run PointNet AI Model and Clustering
-        num_people, Ai_HumanPoints, ai_clusters = people_detector.detect(pointcloud_merged_filtered_array)
-        status_cache.update_status_key("AI DETECTION PEOPLE COUNT", f"{num_people}")
-        
-
         # === Update cached pointcloud that is sent to dashboard via TCP ===
+        # TODO: TCP interface not used anymore, drop this?
         status_cache.update_dashboard_key("pointcloud_merged_filtered_numpyarray", pointcloud_merged_filtered_array)
+
+        # === send pointcloud to AI-model thread ===
+        # Drop oldest if full
+        if config.AI_PEOPLE_DETECTION_ENABLED:
+            if merged_filtered_pointcoud_queue.full():
+                try:
+                    merged_filtered_pointcoud_queue.get_nowait()
+                    log_warn("[main] AI-thread input queue full -> dropping oldest frame (model not processing fast enough?)")
+                except Empty:
+                    log_warn("Queue was full but empty??")
+            # Now insert
+            merged_filtered_pointcoud_queue.put_nowait(pointcloud_merged_filtered_array)
+
+
+        # === receive last AI-detection result from the AI-model thread ===
+        # note this has at least 1 frame delay compared to merged pointcloud 
+        #  (also returns input pointcloud so visualized pointclouds are in sync)
+        if config.AI_PEOPLE_DETECTION_ENABLED:
+            try:
+                last_ai_output = ai_model_output_queue.get_nowait()
+            except queue.Empty:
+                log_warn("[main] AI-thread output queue empty -> using prev result in vis (model not processing fast enough?)")
+                pass  # keep using the previous last_ai_output
+            # extract AI output variables from the queue object
+            ai_numPeople, ai_HumanPoints, ai_clusters, ai_pointcloud_input = last_ai_output
+
 
         # === Update visualizer windows ===
         # Define context with all needed arrays for visualization functions
@@ -243,20 +279,22 @@ def main():
             "pointcloud_2_array": pointcloud_2_array,
             "pointcloud_1_o3d": pointcloud_1_o3d,
             "pointcloud_2_o3d": pointcloud_2_o3d,
-            "pointcloud_ai": Ai_HumanPoints,
+            "pointcloud_ai": ai_HumanPoints,
+            "pointcloud_ai_input": ai_pointcloud_input,
             "ai_clusters": ai_clusters,
             "pc2_transformed": np.asarray(pointcloud_2_transformed_o3d.points),
             "pc_merged": pointcloud_merged_array,
             "pc_filtered": pointcloud_merged_filtered_array,
         }
-        # update each visualizer depending on its mode
+        # update each visualizer depending on its configured mode
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_1_MODE, context)
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_2_MODE, context)
         update_visualizer_by_mode(config.VISUALIZER_WINDOW_3_MODE, context)
+        # note: the visualizer in "motion detection" mode is updated by process_and_visualize_latest_frame directly
 
 
-        # === run Motion Detection ===
-        if config.MOTION_DETECTION_ENABLED:
+        # === run Motion Detection Algorithm ===
+        if config.MOTION_DETECTION_ALGORITHM_ENABLED:
             # determine which visualizer window is configured to display the motion detection output
             # run motion detection
             process_and_visualize_latest_frame(context["pc_filtered"], get_visualizer_by_mode("motion_detection"), status_cache)
@@ -266,6 +304,7 @@ def main():
         # Update exporter class with new Frame. Frame will not automatically be saved, depending on skip_n_frames Attribute
         # This Line does not have to be changed for the event, that File Export will be deactivated
         LazFileSave.save_frame(pointcloud_merged_filtered_array)
+
 
         # === handle launch point picker functionality ===
         # Check if a pick was requested by terminal input

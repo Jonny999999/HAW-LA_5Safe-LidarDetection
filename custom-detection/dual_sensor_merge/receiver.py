@@ -12,6 +12,8 @@ import time
 from config import PCAP_FILE_PACKET_DELAY, PCAP_FILE_REALTIME_PLAYBACK, PCAP_LOOP_WHEN_FILE_COMPLETED
 from utils import log_info, log_warn, log_error
 
+# config
+UDP_RECEIVE_TIMEOUT_WARN_THRESHOLD_SEC = 10  # Time without packets before warning
 
 
 # --- Live UDP mode ---
@@ -22,13 +24,17 @@ def _udp_listener(udp_ip_addr, udp_port, packet_queue, sensor_id):
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((udp_ip_addr, udp_port))
+    sock.settimeout(UDP_RECEIVE_TIMEOUT_WARN_THRESHOLD_SEC) # set inactivity timeout (log warning)
     log_info(f"[receiver-{sensor_id}] Listening for UDP packets on {udp_ip_addr}:{udp_port} for sensor {sensor_id}")
 
     while True:
         try:
             data, _ = sock.recvfrom(2048) # TODO: adjust to actual packet length?
             timestamp = time.time() # store time packet was received (used for pointcloud synchronization)
+            last_packet_time = timestamp
             packet_queue.put_nowait((timestamp, data))
+        except socket.timeout:
+            log_warn(f"[receiver-{sensor_id}] No UDP packets received in the last {UDP_RECEIVE_TIMEOUT_WARN_THRESHOLD_SEC} seconds on {udp_ip_addr}:{udp_port} (Sensor offline?)\n Hint: Verify Sensor traffic using tcpdump, or switch to 'PCAP' mode (config) for offline testing")
         except queue.Full:
             log_warn(f"[receiver-{sensor_id}] Packet queue full. (receiving packets faster than decoding) Dropping UDP packet.")
         except Exception as e:

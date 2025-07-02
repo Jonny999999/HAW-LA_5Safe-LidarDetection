@@ -16,37 +16,43 @@ visualizer_modes = {}
 #########################
 ######## CONFIG #########
 #########################
-VISUALIZER_DEFAULT_WINDOW_WIDTH = 1920
+# Window size (counts for all windows created)
 #VISUALIZER_DEFAULT_WINDOW_WIDTH = 3840
+VISUALIZER_DEFAULT_WINDOW_WIDTH = 1880
 VISUALIZER_DEFAULT_WINDOW_HEIGHT = 2160
-CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED = True
-VISUALIZER_DEFAULT_CAMERA_POSITION = {
+# Custom default camera position
+CUSTOM_DEFAULT_CAMERA__LOAD_STORED_POSITION_ENABLED = True
+# Temporary mode to define the blow position object
+CUSTOM_DEFAULT_CAMERA__SELECT_AND_DUMP_AT_INIT_MODE_ENABLED = False
+CUSTOM_DEFAULT_CAMERA__SELECT_TIMEOUT_SEC = 60
+# Default camera description (determined using above mode)
+CUSTOM_DEFAULT_CAMERA__POSITION_LOADED = {
   "intrinsic": {
-    "width": 1914,
-    "height": 1137,
-    "fx": 984.6708841029068,
-    "fy": 984.6708841029068,
-    "cx": 956.5,
-    "cy": 568.0
+    "width": 1900,
+    "height": 2096,
+    "fx": 1815.1892463321835,
+    "fy": 1815.1892463321835,
+    "cx": 949.5,
+    "cy": 1047.5
   },
   "extrinsic": [
     [
-      -0.6730622953428582,
-      -0.7351171121348872,
-      0.08117867967802239,
-      -0.8071571641729453
+      -0.7024509499068765,
+      -0.6956544212556034,
+      0.15042469598592623,
+      -3.4455552383902632
     ],
     [
-      -0.6322851327318026,
-      0.5149955914727914,
-      -0.5787875704348846,
-      3.20865146732323
+      -0.676031551686384,
+      0.5860467953574598,
+      -0.44668836427172787,
+      4.793792215656059
     ],
     [
-      0.38366998516189654,
-      -0.44088816292803046,
-      -0.8114277357077564,
-      4.39508800354559
+      0.22258482450388878,
+      -0.4154685064343424,
+      -0.8819534659276475,
+      9.491348620600894
     ],
     [
       0.0,
@@ -55,14 +61,14 @@ VISUALIZER_DEFAULT_CAMERA_POSITION = {
       1.0
     ]
   ]
-} 
+}
 
 
 def initialize_visualizer(
     title="LiDAR Viewer", 
     width=VISUALIZER_DEFAULT_WINDOW_WIDTH, 
     height=VISUALIZER_DEFAULT_WINDOW_HEIGHT):
-    log_info(f"Initializing visualizer: {title}")
+    log_info(f"[visualizer.py] Initializing visualizer window: {title}")
     visualizer = o3d.visualization.Visualizer()
     visualizer.create_window(window_name=title, width=width, height=height)
 
@@ -76,13 +82,13 @@ def initialize_visualizer(
     visualizer.update_renderer()
 
     # apply configured camera position
-    if (CUSTOM_DEFAULT_CAMERA_POSITION_ENABLED):
-        apply_camera_parameters(visualizer, VISUALIZER_DEFAULT_CAMERA_POSITION)
+    if (CUSTOM_DEFAULT_CAMERA__LOAD_STORED_POSITION_ENABLED):
+        apply_camera_parameters(visualizer, CUSTOM_DEFAULT_CAMERA__POSITION_LOADED)
 
-    # === uncomment this to create/get the camera position for VISUALIZER_DEFAULT_CAMERA_POSITION ===
-    # pause and manually select the camera position to update the configuration
-    #time.sleep(1)
-    #adjust_and_dump_camera(visualizer)
+    # pause and manually select the camera position for some time and dump info to update the configuration
+    if CUSTOM_DEFAULT_CAMERA__SELECT_AND_DUMP_AT_INIT_MODE_ENABLED:
+        time.sleep(1)
+        adjust_and_dump_camera(visualizer)
 
     # Clear polygon again
     visualizer.clear_geometries()
@@ -120,7 +126,7 @@ def apply_camera_parameters(visualizer, cam_data):
 
 
 
-def adjust_and_dump_camera(visualizer, duration_sec=10):
+def adjust_and_dump_camera(visualizer, duration_sec=60):
     """
     Allows manual camera adjustment for a few seconds and then logs the camera parameters.
     
@@ -223,8 +229,16 @@ def update_visualizer_by_mode(mode, context):
         visualize_dual_frame(context["pointcloud_1_array"], context["pc2_transformed"], vis)
 
     elif mode == "ai":
-        visualize_dual_frame(context["pc_filtered"], context["pointcloud_ai"], vis)
+        # check if mode is enabled
+        if not config.AI_PEOPLE_DETECTION_ENABLED:
+            log_error("[update_visualizer_by_mode] window mode 'ai' but ai-detection is disabled (AI_PEOPLE_DETECTION_ENABLED is set to false in config) -> not updating anything")
+            return
+        # update vis with pointclouds and boxes
+        visualize_dual_frame(context["pointcloud_ai_input"], context["pointcloud_ai"], vis)
         clusters = context["ai_clusters"]
+        # clear existing clusters first (useful if no clusters were found)
+        draw_bounding_box(pcd=[], visualizer=vis, clear_existing=True, render_now=False)
+        # draw all clusters, update render only for the last one
         for i, cluster in enumerate(clusters):
             draw_bounding_box(
                 pcd=cluster,
@@ -235,18 +249,21 @@ def update_visualizer_by_mode(mode, context):
                 render_now=(i == len(clusters) - 1),
                 thick_lines_enabled=True,  # or False depending on your needs
                 thickness_hack_layer_offset=0.01,
-                thickness_hack_layer_count=3
+                thickness_hack_layer_count=4
             )
 
     elif mode == "merged_filtered":
         visualize_dual_frame(context["pc_merged"], context["pc_filtered"], vis)
 
     elif mode == "motion_detection":
+        # only check if mode is even enabled (otherwise updated in processing.py)
+        if not config.MOTION_DETECTION_ALGORITHM_ENABLED:
+            log_error("[update_visualizer_by_mode] window mode 'motion_detection' but detection is disabled (MOTION_DETECTION_ALGORITHM_ENABLED is set to false in config) -> window will stay blank")
         # Do not render here — handled externally
         pass
 
     else:
-        log_warn(f"[visualizer] Unknown visualization mode: {mode}")
+        log_warn(f"[visualizer] Unknown visualization mode: {mode} -> ignoring update")
 
 
 
@@ -349,7 +366,7 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
         visualizer (open3d.visualization.Visualizer): Visualizer instance
     """
     if visualizer is None or (pointcloid1_gray.size == 0 and pointcloud2_dominant_red.size == 0):
-        log_warn("No visualizer or both frames empty, skipping visualization.")
+        log_warn("[visualize_dual_frame] No visualizer or both frames empty, skipping visualization.")
         return
 
     # Slice to XYZ
@@ -367,7 +384,7 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
 
     # First time init per visualizer -> create cached structure
     if vis_id not in _visualizer_objects:
-        log_info("visualize_dual_frame: Creating object for tracking visualizer/window id={vis_id}")
+        log_debug(f"[visualize_dual_frame] Initially creating object for tracking visualizer/window id={vis_id}")
         _visualizer_objects[vis_id] = {
             "pcd_raw": o3d.geometry.PointCloud(),
             "pcd_filtered": o3d.geometry.PointCloud(),
@@ -386,7 +403,7 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
 
     # Add geometry only once
     if not state["added"]:
-        log_info("visualize_dual_frame: visualizer={vis_id} initially adding 2x pointcloud geometry")
+        log_debug(f"[visualize_dual_frame] visualizer={vis_id} initially adding 2x pointcloud geometry")
         visualizer.add_geometry(state["pcd_raw"], reset_bounding_box=False)
         visualizer.add_geometry(state["pcd_filtered"], reset_bounding_box=False)
         state["added"] = True
@@ -406,43 +423,60 @@ def visualize_dual_frame(pointcloid1_gray, pointcloud2_dominant_red, visualizer)
 
 
 
-
-# Function for creating a independent new window with pointcloud for picking a point 
-# (blocks the script until window closed)
 def pick_point_from_cloud(points, title="Pick Points"):
     """
     Opens a blocking Open3D editor window for selecting points.
     Returns list of 3D coordinates (user must press 'q' to close).
     """
-    # convert pointcloud to open3d format
+    print("====================================================================================")
+    print("============================== POINT PICKER LAUNCHED ===============================")
+    print(f"[Pick] SHIFT+Click to select points in '{title}', press Q to exit.")
+    print(f"[Pick] ***close window*** to get selected points logged with ***FULL PRECISION***")
+    print("====================================================================================")
+
+    # Debug input check
+    if not isinstance(points, np.ndarray):
+        print("[DEBUG] points is not a numpy array! Type:", type(points))
+        return [], []
+    if points.ndim != 2 or points.shape[1] < 3:
+        print(f"[DEBUG] Invalid pointcloud shape: {points.shape}, expected Nx3 or more.")
+        return [], []
+
+    print(f"[DEBUG] Received pointcloud with {points.shape[0]} points.")
+    print("[DEBUG] Sample points:")
+    print(points[:min(5, len(points))])  # print first 5 rows
+
+    # Convert to Open3D PointCloud
     pc = o3d.geometry.PointCloud()
-    pc.points = o3d.utility.Vector3dVector(points[:, :3])
+    pc.points = o3d.utility.Vector3dVector(points[:, :3])  # ensure it's Nx3
 
-    log_info(f"[Pick] SHIFT+Click to select points in '{title}', press Q to exit.")
-    log_info(f"[Pick] ***close window*** to get selected points logged with ***FULL PRECISION***")
+    if len(pc.points) == 0:
+        log_error("[point picker] Converted Open3D pointcloud is empty!")
+        return [], []
 
-    # create new visualizer with editing enables (-> blocking)
+    # Create new visualizer with editing enables (-> blocking)
     vis = o3d.visualization.VisualizerWithEditing()
-    vis.create_window()
+    vis.create_window(window_name=title)
     # draw pointcloud
-    vis.add_geometry(pc, reset_bounding_box=False)
-    # start blocking, user selects points
-    vis.run()  # user picks points
+    vis.add_geometry(pc, reset_bounding_box=True) # reset camera to fit the pointcloud
+    vis.run()  # user can pick points, BLOCKING until window closed
     vis.destroy_window()
 
     # extract indices of selected points
     picked_indices = vis.get_picked_points()
-    print(f"finished picking points, logging full pcecision coordinates")
+    print(f"Finished picking points, logging full precision coordinates")
+    points_np = np.asarray(pc.points)
 
     # log all selected points with full precision
     if picked_indices:
-        points_np = np.asarray(pc.points)
         coords = [points_np[i] for i in picked_indices]
-        print(f"coords: {coords}")
+        print(f"[DEBUG] Picked indices: {picked_indices}")
         for i, c in zip(picked_indices, coords):
             print(f"[Pick] Full-precision Coordinates of point-Index {i}: ({c[0]:.9f}, {c[1]:.9f}, {c[2]:.9f})")
         return picked_indices, coords
-    return picked_indices
+
+    return picked_indices, []
+
 
 
 
@@ -497,8 +531,8 @@ def draw_cluster_boxes(clusters, visualizer):
 
 
 
-#drawn_bounding_boxes = []  # Global cache of drawn box objects
-_drawn_bounding_boxes_cache = {}  # Global: visualizer_id -> set of boxes
+# Global cache for bounding boxes per visualizer (used to clear previous ones)
+_drawn_bounding_boxes_cache = {}  # Global cache: visualizer_id -> set of drawn box geometries
 def draw_bounding_box(
     pcd,
     visualizer,
@@ -510,33 +544,104 @@ def draw_bounding_box(
     thickness_hack_layer_offset=0.01,
     thickness_hack_layer_count=3
 ):
-    import open3d as o3d
+    """
+    Draws an axis-aligned bounding box around a point cloud or multiple clusters
+    in an Open3D visualizer window. Can simulate thick lines by drawing
+    multiple offset boxes. Supports cache-based clearing of previous boxes.
 
+    Note: to only clear all boxes in visualizer set pcd=[ ] or None, clear_existing=True and render_now=True
+
+    Supports:
+        - Single PointCloud (Open3D or NumPy ndarray of shape Nx3)
+        - List of NumPy arrays (each representing a cluster point cloud)
+
+    Parameters:
+        pcd (PointCloud | np.ndarray | List[np.ndarray]):
+            The input point cloud (Open3D or NumPy), or a list of NumPy clusters.
+        pcd: Can be:
+            - open3d.geometry.PointCloud
+            - numpy.ndarray (Nx3)
+            - list or tuple of the above
+
+        visualizer (o3d.visualization.Visualizer):
+            The Open3D visualizer instance to draw in.
+
+        color (tuple of float):
+            RGB color tuple in range [0.0, 1.0] for the bounding box.
+
+        min_volume_m3 (float):
+            Minimum bounding box volume (in m³). Smaller boxes are expanded.
+
+        clear_existing (bool):
+            Whether to remove all previously drawn boxes in this visualizer.
+
+        render_now (bool):
+            Whether to update the visualizer window immediately.
+
+        thick_lines_enabled (bool):
+            If True, draws multiple offset boxes to simulate thick lines.
+
+        thickness_hack_layer_offset (float):
+            Offset distance between "thickness" box layers (in meters).
+
+        thickness_hack_layer_count (int):
+            Number of fake thickness layers (including center box).
+            Example: 3 = center + 1 inner + 1 outer.
+    """
     if visualizer is None:
         return
 
     vis_id = id(visualizer)
 
-    # Create visualizer-specific cache if it doesn't exist
+    # === Global cache of drawn boxes per visualizer ===
+    global _drawn_bounding_boxes_cache
+    if '_drawn_bounding_boxes_cache' not in globals():
+        _drawn_bounding_boxes_cache = {}
     if vis_id not in _drawn_bounding_boxes_cache:
         _drawn_bounding_boxes_cache[vis_id] = set()
 
     vis_cache = _drawn_bounding_boxes_cache[vis_id]
 
-    # === Clear all previously drawn boxes for this visualizer ===
+    # === Clear old boxes if requested ===
     if clear_existing:
         for box in vis_cache:
             try:
                 visualizer.remove_geometry(box, reset_bounding_box=False)
             except Exception as e:
-                log_warn(f"[draw_bounding_boxes] Failed to remove box: {e}")
+                log_warn(f"[draw_bounding_box] Failed to remove box: {e}")
         vis_cache.clear()
 
-    # === Draw new box (if point cloud provided) ===
-    if pcd is not None:
+    # === Ensure we're working with a list of valid pointclouds ===
+    inputs = pcd
+    if inputs is None: 
+        # when no clusters are provided, we continue to apply the eventual box deletion if requested
+        # empty array will skip the for loop but still update the render at the end if requested
+        inputs = []
+    if not isinstance(inputs, (list, tuple)):
+        inputs = [inputs]
+
+    for entry in inputs:
+        if entry is None:
+            continue
+        # Convert numpy array to open3d PointCloud
+        if isinstance(entry, np.ndarray):
+            if entry.shape[0] == 0:
+                continue  # skip empty array
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(entry.astype(np.float64))
+        elif isinstance(entry, o3d.geometry.PointCloud):
+            if len(entry.points) == 0:
+                continue  # skip empty pointcloud
+            pcd = entry
+        else:
+            log_warn(f"[draw_bounding_box] Unsupported input type: {type(entry)}")
+            continue
+
+        # === Compute bounding box ===
         bbox = pcd.get_axis_aligned_bounding_box()
         volume = bbox.volume()
 
+        # Expand bbox to minimum volume if needed
         if min_volume_m3 > 0 and volume < min_volume_m3:
             center = bbox.get_center()
             base_size = (min_volume_m3 / 3.0) ** (1/3)
@@ -547,8 +652,8 @@ def draw_bounding_box(
                 max_bound=(center[0] + half_xy, center[1] + half_xy, center[2] + half_z)
             )
 
+        # === Generate thick boxes if enabled ===
         boxes_to_draw = []
-
         if thick_lines_enabled:
             center = bbox.get_center()
             extents = bbox.get_extent()
@@ -564,10 +669,12 @@ def draw_bounding_box(
             bbox.color = color
             boxes_to_draw.append(bbox)
 
+        # === Add boxes to visualizer and cache ===
         for box in boxes_to_draw:
             visualizer.add_geometry(box, reset_bounding_box=False)
             vis_cache.add(box)
 
+    # === Render visualizer update ===
     if render_now:
         visualizer.poll_events()
         visualizer.update_renderer()
@@ -606,7 +713,7 @@ def draw_2d_polygon(polygon_xy, visualizer, color=(0.2, 0.8, 0.2), fit_camera_to
     poly_3d = [(x, y, 0.0) for x, y in polygon_xy] + [(polygon_xy[0][0], polygon_xy[0][1], 0.0)]
     lines = [[i, i + 1] for i in range(len(poly_3d) - 1)]
 
-    log_info(f"draw_2d_polygon: Adding new polygon to visualizer (hash:{polygon_hash})")
+    log_debug(f"[draw_2d_polygon] Initially adding new polygon to visualizer (hash:{polygon_hash})")
     line_set = o3d.geometry.LineSet()
     line_set.points = o3d.utility.Vector3dVector(poly_3d)
     line_set.lines = o3d.utility.Vector2iVector(lines)

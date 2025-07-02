@@ -38,7 +38,7 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30,
         return 0
 
     if pointcloud_np.shape[0] == 0:
-        log_warn("No dynamic points to analyze.")
+        log_info("No dynamic points to analyze.")
         return 0
 
     # Convert to Open3D point cloud
@@ -50,7 +50,7 @@ def estimate_moving_people(pointcloud_np, distance_threshold=0.5, min_points=30,
 
     # Handle empty/noise result
     if labels.size == 0 or np.max(labels) < 0:
-        log_warn("No clusters found.")
+        log_info("No clusters found.")
         return 0
 
     unique_labels, counts = np.unique(labels, return_counts=True)
@@ -144,7 +144,7 @@ def track_moving_clusters(
     # === Run DBSCAN if points exist and under max limit ===
     if pointcloud_np.shape[0] == 0:
         if enable_logging:
-            log_info("[track-clusters] No points received.")
+            log_debug("[track-clusters] No points received.")
     elif pointcloud_np.shape[0] > max_moving_points_ignore_frame:
         if enable_logging:
             log_warn(f"[track-clusters] Too many points ({pointcloud_np.shape[0]}), skipping frame.")
@@ -175,7 +175,7 @@ def track_moving_clusters(
                 })
         else:
             if enable_logging:
-                log_info("[track-clusters] DBSCAN found no clusters.")
+                log_debug("[track-clusters] DBSCAN found no clusters.")
 
     # === Matching and cluster tracking ===
     results = []
@@ -250,7 +250,7 @@ def track_moving_clusters(
                     "status": "confirmed"
                 })
                 if enable_logging and not was_confirmed:
-                    log_warn(f"[track-clusters] Cluster CONFIRMED id={best_id}")
+                    log_info(f"[track-clusters] Cluster CONFIRMED id={best_id}")
 
         else:
             passes_volume = cluster["volume"] >= min_volume_m3
@@ -303,7 +303,7 @@ def track_moving_clusters(
                 expired_ids.append(prev_id)
                 if enable_logging:
                     if prev_data.get("confirmed", False):
-                        log_warn(f"[track-clusters] Cluster DROPPED id={prev_id}")
+                        log_info(f"[track-clusters] Cluster DROPPED id={prev_id}")
                     else:
                         log_debug(f"[track-clusters] Cluster dropped (unconfirmed) id={prev_id}")
 
@@ -321,7 +321,7 @@ def track_moving_clusters(
     matched_retained_clusters_count = sum(1 for r in results if r["status"] in ("retained"))
     tracked_confirmed_clusters_count = matched_moving_clusters_count + matched_retained_clusters_count
     if enable_logging:
-        log_info(f"[track-clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {matched_retained_clusters_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
+        log_debug(f"[track-clusters] Matched: {reused_id_count}, New: {new_id_count}, Retained: {matched_retained_clusters_count}, Expired: {len(expired_ids)}, Total: {len(results)}")
 
     if status_cache:
         status_cache.update_status_key("DETECTION_TRACKED_PEOPLE_INSIDE", str(tracked_confirmed_clusters_count))
@@ -394,7 +394,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
     history_buffer.append(cluster_dict)
 
     if len(history_buffer) < 2:
-        log_warn("[track_room_occupancy] Not enough frames in history yet")
+        log_warn("[track_room_occupancy] Not enough frames in history yet, skipping this run")
         return max(people_inside_incremented, 0)
 
     # Init persistent sets for tracking entered/exited cluster IDs
@@ -423,12 +423,12 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
         log_debug(f"[track_room_occupancy] was_inside_outer={was_inside_outer}, was_inside_inner={was_inside_inner}, is_inside_outer={is_inside_outer}, is_inside_inner={is_inside_inner}")
 
         if moved_distance < 0.05:
-            log_info(f"[track_room_occupancy] Cluster {cid} skipped due to low movement")
+            log_debug(f"[track_room_occupancy] Cluster {cid} skipped due to low movement")
             continue  # noise or static
 
         # Entry: outside → inside
         if not was_inside_outer and is_inside_inner and cid not in track_room_occupancy.entered_ids:
-            log_warn(f"[track_room_occupancy] Cluster {cid} ENTERED")
+            log_info(f"[track_room_occupancy] Cluster {cid} ENTERED")
             sys.stdout.write('\a')
             sys.stdout.flush()
             if status_cache:
@@ -439,7 +439,7 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
 
         # Exit: inside → outside
         elif was_inside_inner and not is_inside_outer and cid not in track_room_occupancy.exited_ids:
-            log_warn(f"[track_room_occupancy] Cluster {cid} LEFT")
+            log_info(f"[track_room_occupancy] Cluster {cid} LEFT")
             if status_cache:
                 status_cache.add_log_entry("DETECTION_LAST_EVENTS", f"Cluster {cid} LEFT", trigger_file_update=False)
             track_room_occupancy.exited_ids.add(cid)
