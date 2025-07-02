@@ -66,6 +66,7 @@ For the testdata files in the `data/` folder (like recorded LiDAR logs) to work,
   or download at https://git-lfs.com/  
   then  
   `git lfs install`
+  `git lfs pull`
 
 ### After cloning the repo:
 ```bash

@@ -1,8 +1,3 @@
 # Custom Detection
 
-Contains our own implementation of a rule-based or motion-based person detection.
-
-Includes:
-- Raw LiDAR data parsers
-- Heuristic/motion tracking logic
-- Basic visualizations and output
+This folder contains the custom main python project for receiving, decoding, merging, detecting motion, run ai-detection and visualize everything
