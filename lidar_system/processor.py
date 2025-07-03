@@ -6,7 +6,7 @@ import time
 
 from config import COUNT_PEOPLE_ENABLED, COUNT_PEOPLE_DRAW_BOXES, MODE_SECOND_DATA_SET, CROP_POINTCLOUD_POLYGON, CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER, POINTCLOUD_HISTORY_BUFFER_SIZE, PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON
 from utils import log_info, log_warn, log_debug, serialize_numpy_array
-from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_box, draw_cluster_boxes
+from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_box, draw_cluster_boxes, remove_near_duplicates
 from filters import apply_highpass_filter, remove_isolated_points, crop_points_within_xy_polygon
 from people_detection import estimate_moving_people, track_moving_clusters, track_room_occupancy
 
@@ -18,6 +18,10 @@ fast_cluster_detection_cache = {}
 # Used for highpass, temporal denoise, clustering
 # This stores the *XYZ arrays* (after [:, :3])
 pointcloud_history_buffer = deque(maxlen=POINTCLOUD_HISTORY_BUFFER_SIZE)
+
+# variables for point difference mode
+reference_was_saved = False
+reference_pointcloud = None
 
 def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache):
     """
@@ -65,6 +69,15 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         cropped_frame = crop_points_within_xy_polygon(highpass_points, polygon_xy=CROP_POINTCLOUD_POLYGON, visualizer=visualizer, draw_box=True)
         filtered_frame = remove_isolated_points(cropped_frame, nb_points=20, radius=0.3)
         #log_info("Visualizing high-pass + denoised frame.")
+    
+    elif MODE_SECOND_DATA_SET == "USE ONLY CHANGED POINTS AFTER START":
+        global reference_was_saved, reference_pointcloud
+        if not reference_was_saved:
+            log_warn("[processor testing] saving current pointcloud as reference")
+            reference_pointcloud = new_pointcloud
+            reference_was_saved = True
+        # remove reference points from latest pointcloud
+        filtered_frame = remove_near_duplicates(latest_frame, reference_pointcloud, threshold=0.2)
 
     else:
         log_warn(f"Invalid MODE_SECOND_DATA_SET: {MODE_SECOND_DATA_SET}")
@@ -155,12 +168,12 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         ## old people estimation TODO: drop this
         #estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
     status_cache.update_status_key("TIMING_MOTION_TRACKING_ALGORITHM", f"{(time.time() - t1)*1000:.0f} ms", trigger_file_update=False)
+    status_cache.update_status_key("TIMING_MOTION_DETECTION__VISUALIZER_UPDATE", f"{(time.time() - t3)*1000:.0f} ms", trigger_file_update=False)
 
 
     # Visualize both point clouds
     if visualizer is not None:
         visualize_dual_frame(latest_frame, filtered_frame, visualizer)
-        status_cache.update_status_key("TIMING_MOTION_DETECTION__VISUALIZER_UPDATE", f"{(time.time() - t3)*1000:.0f} ms", trigger_file_update=False)
 
 
 
