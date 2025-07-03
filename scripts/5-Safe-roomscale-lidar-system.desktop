@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=5-Safe roomscale-system Launcher
+Comment=Kills previous instances and runs bash script with GUI + terminal
+Exec=env bash -c '~/git/HAW-LA_5Safe-LidarDetection/scripts/start_python-script+stats-terminal.sh'
+Icon=utilities-terminal
+Terminal=true
+Type=Application
+StartupNotify=false
