@@ -1,6 +1,11 @@
 #!/bin/bash
+
+# --- Configuration ---
+REPO_ROOT="$HOME/git/HAW-LA_5Safe-LidarDetection"
+STATUS_FILE_DEFAULT="$REPO_ROOT/lidar_system/output/status.json"
 # Use first argument as status file if provided, otherwise fallback to default
-STATUS_FILE="${1:-custom-detection/dual_sensor_merge/output/status.json}"
+STATUS_FILE="${1:-$STATUS_FILE_DEFAULT}"
+
 REFRESH_DELAY=0.05  # minimum delay between updates in seconds
 # note: too low delay causes flickering
 

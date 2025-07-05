@@ -429,8 +429,9 @@ def track_room_occupancy(clusters, polygon_xy_inside_area, history_buffer=None, 
         # Entry: outside → inside
         if not was_inside_outer and is_inside_inner and cid not in track_room_occupancy.entered_ids:
             log_info(f"[track_room_occupancy] Cluster {cid} ENTERED")
-            sys.stdout.write('\a')
-            sys.stdout.flush()
+            # trigger beep:
+            #   sys.stdout.write('\a')
+            #   sys.stdout.flush()
             if status_cache:
                 status_cache.add_log_entry("DETECTION_LAST_EVENTS", f"Cluster {cid} ENTERED", trigger_file_update=False)
             track_room_occupancy.entered_ids.add(cid)
