@@ -13,8 +13,8 @@ import numpy as np
 # Select mode we receive the sensor data
 # "UDP": stream live from UDP (uses UDP_ options)
 # "PCAP": stream from pcap dump file (uses PCAP_ options)
-#DATA_RECEIVE_MODE = "PCAP"
-DATA_RECEIVE_MODE = "UDP"
+DATA_RECEIVE_MODE = "PCAP"
+#DATA_RECEIVE_MODE = "UDP"
 
 
 #=== UDP Stream config ===
@@ -88,11 +88,6 @@ STATUS_FILE_KEYS_NOT_ADDED_TO_FILE = ["LOG_LAST_ERRORS", "TIMING_FRAMERATE_DECOD
 # starts TCP socket poviding gobal status info and pointclouds for a dashboard (currently not relable)
 DASHBOARD_TCP_SERVER_ENABLED = False
 
-# enable motion+people detection and tracking
-MOTION_DETECTION_ALGORITHM_ENABLED = True
-
-# enable ai-based detection using trained model
-AI_PEOPLE_DETECTION_ENABLED = True
 
 
 # === Visualizer window config ===
@@ -162,18 +157,25 @@ TRANSFORMATION_MATRIX_SENSOR_2 = np.array([
 
 
 ###############################
-##### detection algorithm #####
+###### people detection #######
 ###############################
+# enable ai-based detection using trained model
+AI_PEOPLE_DETECTION_ENABLED = True
+
+# detect and count people entering and leaving
+COUNT_PEOPLE_ENABLED = True
+
+# enable motion+people detection and tracking
+MOTION_DETECTION_ALGORITHM_ENABLED = True
+
 POINTCLOUD_HISTORY_BUFFER_SIZE = 9  # Rolling buffer of last N frames
 
-COUNT_PEOPLE_ENABLED = True
-COUNT_PEOPLE_DRAW_BOXES = True
 
-# what should be drawn as second RED pointcloud: (is also used as input for detecting people)
-MODE_SECOND_DATA_SET = "HIGHPASS+DENOISE"
-#MODE_SECOND_DATA_SET = "HIGHPASS+CROP+DENOISE"
-#MODE_SECOND_DATA_SET = "HIGHPASS"
-#MODE_SECOND_DATA_SET = "OLDEST" # to test buffer size
+# defines what pointcloud the detection algorithms get as input (also drawn as red points in visualizer in motion_detection mode)
+DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "HIGHPASS+DENOISE" # default - only keep changed points since oldest frame in buffer and filter separated points
+#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "CHANGED_POINTS_SINCE_START" # saves first merged pointcloud at startup, then only passes new points
+#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "HIGHPASS"    # only keep points changed since oldest frame in buffer
+#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "OLDEST"      # simply use oldest frame in buffer (to test buffer size)
 
 
 PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
@@ -185,10 +187,6 @@ PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
     (0.228421226, 0.920938611), # top room edge (sensor1)
     (-6.129019260, -6.429360390) # left room edge
 ]
-
-# for determining the crop polygon its a good idea to log the current pointcloud edges
-CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False #deprecated, use cli to start instead
-
 
 
 

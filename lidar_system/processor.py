@@ -4,11 +4,11 @@ from scipy.spatial import cKDTree
 from collections import deque
 import time
 
-from config import COUNT_PEOPLE_ENABLED, COUNT_PEOPLE_DRAW_BOXES, MODE_SECOND_DATA_SET, CROP_POINTCLOUD_POLYGON, CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER, POINTCLOUD_HISTORY_BUFFER_SIZE, PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON
+import config as config
 from utils import log_info, log_warn, log_debug, serialize_numpy_array
-from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_box, draw_cluster_boxes
+from visualizer import visualize_dual_frame, draw_2d_polygon, draw_bounding_box, draw_cluster_boxes, remove_near_duplicates
 from filters import apply_highpass_filter, remove_isolated_points, crop_points_within_xy_polygon
-from people_detection import estimate_moving_people, track_moving_clusters, track_room_occupancy
+from people_detection import track_moving_clusters, track_room_occupancy
 
 
 # cache for cluster tracking
@@ -17,14 +17,21 @@ fast_cluster_detection_cache = {}
 # === Rolling buffer for motion filtering ===
 # Used for highpass, temporal denoise, clustering
 # This stores the *XYZ arrays* (after [:, :3])
-pointcloud_history_buffer = deque(maxlen=POINTCLOUD_HISTORY_BUFFER_SIZE)
+pointcloud_history_buffer = deque(maxlen=config.POINTCLOUD_HISTORY_BUFFER_SIZE)
+
+# variables for point difference mode
+reference_was_saved = False
+reference_pointcloud = None
 
 def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache):
     """
     Processes the latest frame in the rolling buffer:
     - Applies motion filters (high-pass, denoise)
     - Detects moving clusters
+    - Tracks moving clusters
+    - counts people leaving and entering
     - Visualizes both raw and filtered data
+    - Visualizes clusters polygons etc
 
     Args:
         pointcloud_history_buffer (deque): Rolling buffer of point clouds (np.ndarray N x 3)
@@ -37,37 +44,39 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     pointcloud_history_buffer.append(xyz_points)
 
     # Wait until enough frames for filters
-    if len(pointcloud_history_buffer) < POINTCLOUD_HISTORY_BUFFER_SIZE:
-        log_warn(f"[processor] too few frames in buffer for processing, waiting for buffer to fill up...({len(pointcloud_history_buffer)}/{POINTCLOUD_HISTORY_BUFFER_SIZE})")
+    if len(pointcloud_history_buffer) < config.POINTCLOUD_HISTORY_BUFFER_SIZE:
+        log_warn(f"[processor] too few frames in buffer for processing, waiting for buffer to fill up...({len(pointcloud_history_buffer)}/{config.POINTCLOUD_HISTORY_BUFFER_SIZE})")
         return
 
     # Latest raw LiDAR scan
     latest_frame = pointcloud_history_buffer[-1]
 
-    # TODO: Optimize the selected filter combination configuration (more general approach to chain them)
-    # Select transformation/filter mode
+    # Run Filter by configured mode to get the input pointcloud for detection
     t1 = time.time()
-    if MODE_SECOND_DATA_SET == "OLDEST":
-        filtered_frame = pointcloud_history_buffer[0]  # Use oldest frame directly
+    if config.DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE == "OLDEST":
+        filtered_frame = pointcloud_history_buffer[0]  # Use oldest frame directly (only useful for testing the buffer)
         #log_info("Visualizing oldest frame (baseline).")
 
-    elif MODE_SECOND_DATA_SET == "HIGHPASS":
+    elif config.DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE == "HIGHPASS":
         filtered_frame = apply_highpass_filter(pointcloud_history_buffer, minMovedMetersThreshold=0.1)
         #log_info("Visualizing high-pass filtered frame.")
 
-    elif MODE_SECOND_DATA_SET == "HIGHPASS+DENOISE":
+    elif config.DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE == "HIGHPASS+DENOISE":
         highpass_points = apply_highpass_filter(pointcloud_history_buffer, minMovedMetersThreshold=0.1)
         filtered_frame = remove_isolated_points(highpass_points, nb_points=40, radius=0.3)
 
-    elif MODE_SECOND_DATA_SET == "HIGHPASS+CROP+DENOISE":
-        # Define rectangular crop region (clockwise or counter-clockwise)
-        highpass_points = apply_highpass_filter(pointcloud_history_buffer, minMovedMetersThreshold=0.15)
-        cropped_frame = crop_points_within_xy_polygon(highpass_points, polygon_xy=CROP_POINTCLOUD_POLYGON, visualizer=visualizer, draw_box=True)
-        filtered_frame = remove_isolated_points(cropped_frame, nb_points=20, radius=0.3)
-        #log_info("Visualizing high-pass + denoised frame.")
-
+    elif config.DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE == "CHANGED_POINTS_SINCE_START":
+        global reference_was_saved, reference_pointcloud
+        if not reference_was_saved:
+            log_warn("[processor filter] first run - saving current pointcloud as reference")
+            reference_pointcloud = new_pointcloud
+            reference_was_saved = True
+        # remove reference points from latest pointcloud
+        filtered_frame = remove_near_duplicates(latest_frame, reference_pointcloud, threshold=0.3)
+        # additionaly apply denoise filter (low settings) to get rid of isolated flickering points
+        filtered_frame = remove_isolated_points(filtered_frame, nb_points=20, radius=0.2)
     else:
-        log_warn(f"Invalid MODE_SECOND_DATA_SET: {MODE_SECOND_DATA_SET}")
+        log_warn(f"Invalid DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE: {config.DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE} -> fix config.py")
         return
     status_cache.update_status_key("TIMING_MOTION_DETECTION__APPLY_FILTERS", f"{(time.time() - t1)*1000:.0f} ms", trigger_file_update=False)
 
@@ -78,19 +87,8 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
     import open3d as o3d
     import numpy as np
 
-    # open additional viewer window to manually get pint coordinates (freezes script here) useful for defining the crop polygon points
-    if CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER:
-        log_warn("CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER is enabled -> showing current pointcloud for selecting points to get coordinates")
-        log_warn("use SHIFT+Click on a point to show coordinates")
-        # Example: your pointcloud as Nx3 numpy array
-        pc = o3d.geometry.PointCloud()
-        pc.points = o3d.utility.Vector3dVector(pointcloud_history_buffer[-1])
 
-        # Open viewer — pick with Shift + Left Click
-        o3d.visualization.draw_geometries_with_editing([pc])
-
-
-    if COUNT_PEOPLE_ENABLED:
+    if config.COUNT_PEOPLE_ENABLED:
         # advanced tracking of moving clusters
         # slow detection to be sure, long retain
         tracked_clusters_precise = track_moving_clusters(
@@ -133,14 +131,14 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
         if visualizer is not None:
             #=== draw clusters ===
             draw_cluster_boxes(tracked_clusters_precise, visualizer)
-            draw_2d_polygon(PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
+            draw_2d_polygon(config.PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON, visualizer, color=(1,0.6,0)) # draw room polygon in orange
 
         #=== count people leaving/entering ===
         # count people entering and leaving the room
         people_inside = track_room_occupancy(
             #tracked_clusters_fast,
             tracked_clusters_fast,
-            polygon_xy_inside_area=PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON,
+            polygon_xy_inside_area=config.PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON,
             history_buffer=None,
             status_cache=status_cache,
             visualizer=visualizer
@@ -152,8 +150,6 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
             [serialize_numpy_array(cluster["pcd"].points) for cluster in tracked_clusters_precise]
         )
 
-        ## old people estimation TODO: drop this
-        #estimate_moving_people(filtered_frame, distance_threshold=0.5, min_points=120, visualizer=visualizer)
     status_cache.update_status_key("TIMING_MOTION_TRACKING_ALGORITHM", f"{(time.time() - t1)*1000:.0f} ms", trigger_file_update=False)
 
 
