@@ -1,6 +1,6 @@
 # 5Safe Lidar Room-Scale LiDAR People Detection – HAW-LA
 
-This repository contains the full system for **5Safe Room-Scale LiDAR Detection**, developed in the **IoT Project module** at **HAW Landshut**.
+This repository contains the full system for **5Safe Room-Scale LiDAR Detection**, developed in the **IoT Project module** at **HAW Landshut** during the summer semester 2025.
 
 It is loosely inspired by the original *5Safe* project, which focused on outdoor/street-level LiDAR detection. Our version is an independent system tailored for **indoor room-scale environments**, using the same class of 3D LiDAR sensors in a dual-sensor setup.  
 <br>
@@ -128,6 +128,20 @@ pip install -r lidar_system/requirements_full.txt
 
 ---
 
+# Internal Python Architecture
+
+### Threads / Processes
+The internal structure of the python project is based on multiple parallel threads or processes communicating via queues:
+![Python Threads](doc/diagrams/python_threads.png)
+### Main loop
+![main](doc/diagrams/python_main.png)
+### Tracking algorithm
+![tracking](doc/diagrams/python_tracking.png)
+
+
+---
+
+
 # Usage
 
 ## Basic Launch
@@ -147,19 +161,6 @@ This script kills old instances, starts the main detection system and delayed a 
 cd lidar_system
 python main.py
 ```
-
----
-
-# Internal Python Architecture
-
-### Threads / Processes
-The internal structure of the python project is based on multiple parallel threads or processes communicating via queues:
-![Python Threads](doc/diagrams/python_threads.png)
-### Main loop
-![main](doc/diagrams/python_main.png)
-### Tracking algorithm
-![tracking](doc/diagrams/python_tracking.png)
-
 
 ---
 
