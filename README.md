@@ -59,6 +59,20 @@ doc/                       ← Documentation and screenshots
 
 ---
 
+# AI Model Integration
+This project provides an **end-to-end pipeline** for:
+
+- Loading **LiDAR point cloud data** (.bin and .pcd files) with associated labels in JSON (Supervisely format).
+- Preprocessing and batching data with PyTorch.
+- Training a **lightweight PointNet** model to segment point clouds into *person* vs. *background*.
+- Postprocessing with **DBSCAN clustering** to count distinct people in each scene.
+
+It is implemented and tested in **Google Colab**, utilizing GPU acceleration when available.
+
+The Code is in the ai-detection folder under the name CreateModelAndTrain.py
+Code snippets marked with OLD are remnants from the testing and developement phase.
+---
+
 # Installation
 
 ## 1. Clone the Repository
