@@ -27,24 +27,24 @@ UDP_PORT_SENSOR2 = 5004
 
 
 #=== PCAP Mode config ===
-#PCAP_FILE = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
-#PCAP_FILE = "../../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
-#PCAP_FILE = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE = "../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
+#PCAP_FILE = "../data/testdata/2025-05-06_4ppl-walking_sensor-tilted_VLP-32C.pcap"
+#PCAP_FILE = "../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
 
-#PCAP_FILE_1 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
-#PCAP_FILE_2 = "../../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE_1 = "../data/testdata/2025-05-20_dual-sensor-test_sensor-lamp.pcap.gz"
+#PCAP_FILE_2 = "../data/testdata/2025-05-20_dual-sensor-test_sensor-tripod.pcap.gz"
 
-#PCAP_FILE_1 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
-#PCAP_FILE_2 = "../../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
+#PCAP_FILE_1 = "../data/testdata/2025-05-28_dual-sensor-test_sensor-tripod.pcap.gz"
+#PCAP_FILE_2 = "../data/testdata/2025-05-28_dual-sensor-test_sensor-lamp.pcap.gz"
 
-#PCAP_FILE_1 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
-#PCAP_FILE_2 = "../../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
+#PCAP_FILE_1 = "../data/testdata/2025-06-03_leave-enter-room_sensor-tripod.pcap.gz"
+#PCAP_FILE_2 = "../data/testdata/2025-06-03_leave-enter-room_sensor-lamp.pcap.gz"
 # manually correct delay between recording start of each file:
 PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
 PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
-PCAP_FILE_1 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
-PCAP_FILE_2 = "../../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
+PCAP_FILE_1 = "../data/testdata/2025-06-03_walk-use-chairs_sensor-tripod.pcap.gz"
+PCAP_FILE_2 = "../data/testdata/2025-06-03_walk-use-chairs_sensor-lamp.pcap.gz"
 #PCAP_FILE_1_PLAYBACK_DELAY_MS = 0
 #PCAP_FILE_2_PLAYBACK_DELAY_MS = 900
 
@@ -88,11 +88,6 @@ STATUS_FILE_KEYS_NOT_ADDED_TO_FILE = ["LOG_LAST_ERRORS", "TIMING_FRAMERATE_DECOD
 # starts TCP socket poviding gobal status info and pointclouds for a dashboard (currently not relable)
 DASHBOARD_TCP_SERVER_ENABLED = False
 
-# enable motion+people detection and tracking
-MOTION_DETECTION_ALGORITHM_ENABLED = True
-
-# enable ai-based detection using trained model
-AI_PEOPLE_DETECTION_ENABLED = True
 
 
 # === Visualizer window config ===
@@ -104,10 +99,9 @@ AI_PEOPLE_DETECTION_ENABLED = True
 # - "merged_dual"         → sensor1 + transformed sensor2 in different colors
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
-VISUALIZER_WINDOW_1_MODE = "motion_detection"
-VISUALIZER_WINDOW_2_MODE = "ai"
-VISUALIZER_WINDOW_3_MODE = "none"
-#VISUALIZER_WINDOW_3_MODE = "none"
+VISUALIZER_WINDOW_1_MODE = "merged_dual"
+VISUALIZER_WINDOW_2_MODE = "motion_detection"
+VISUALIZER_WINDOW_3_MODE = "ai"
 
 # logging
 # TODO: use actual logging library with actual loglevels per TAG
@@ -162,18 +156,25 @@ TRANSFORMATION_MATRIX_SENSOR_2 = np.array([
 
 
 ###############################
-##### detection algorithm #####
+###### people detection #######
 ###############################
+# enable ai-based detection using trained model
+AI_PEOPLE_DETECTION_ENABLED = True
+
+# detect and count people entering and leaving
+COUNT_PEOPLE_ENABLED = True
+
+# enable motion+people detection and tracking
+MOTION_DETECTION_ALGORITHM_ENABLED = True
+
 POINTCLOUD_HISTORY_BUFFER_SIZE = 9  # Rolling buffer of last N frames
 
-COUNT_PEOPLE_ENABLED = True
-COUNT_PEOPLE_DRAW_BOXES = True
 
-# what should be drawn as second RED pointcloud: (is also used as input for detecting people)
-MODE_SECOND_DATA_SET = "HIGHPASS+DENOISE"
-#MODE_SECOND_DATA_SET = "HIGHPASS+CROP+DENOISE"
-#MODE_SECOND_DATA_SET = "HIGHPASS"
-#MODE_SECOND_DATA_SET = "OLDEST" # to test buffer size
+# defines what pointcloud the detection algorithms get as input (also drawn as red points in visualizer in motion_detection mode)
+DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "HIGHPASS+DENOISE" # default - only keep changed points since oldest frame in buffer and filter separated points
+#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "CHANGED_POINTS_SINCE_START" # diff mode - saves first merged pointcloud at startup, then only passes new points
+#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "HIGHPASS"    # only keep points changed since oldest frame in buffer
+#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "OLDEST"      # simply use oldest frame in buffer (to test buffer size)
 
 
 PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
@@ -185,10 +186,6 @@ PEOPOLE_TRACKING_INSIDE_ROOM_AREA_POLYGON = [
     (0.228421226, 0.920938611), # top room edge (sensor1)
     (-6.129019260, -6.429360390) # left room edge
 ]
-
-# for determining the crop polygon its a good idea to log the current pointcloud edges
-CROP_POINTCLOUD_STOP_SCRIPT_OPEN_POINT_PICKER = False #deprecated, use cli to start instead
-
 
 
 

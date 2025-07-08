@@ -1,3 +1,4 @@
 *.pcap filter=lfs diff=lfs merge=lfs -text
 *.pcap.gz filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
+data/annotation/supervisely_raw.zip filter=lfs diff=lfs merge=lfs -text

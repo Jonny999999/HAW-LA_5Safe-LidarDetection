@@ -4,7 +4,7 @@ import numpy as np
 import time
 
 # === CONFIG ===
-PCAP_PATH = "../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
+PCAP_PATH = "../../data/testdata/2025-04-29_1person-walking_sensor-level.pcap"
 MAX_FRAMES = 100
 DELAY = 0.1  # seconds between frames (simulate real-time)
 VISUALIZE = True  # Toggle visualization (helpful for headless testing)

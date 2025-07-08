@@ -249,7 +249,7 @@ def update_visualizer_by_mode(mode, context):
                 render_now=(i == len(clusters) - 1),
                 thick_lines_enabled=True,  # or False depending on your needs
                 thickness_hack_layer_offset=0.01,
-                thickness_hack_layer_count=4
+                thickness_hack_layer_count=5
             )
 
     elif mode == "merged_filtered":
