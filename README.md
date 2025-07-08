@@ -11,6 +11,19 @@ The Idea was to explore two detection strategies:
 
 ---
 
+# Project Result & Documentation (V1.0)
+
+This repository documents the complete 5Safe Room-Scale LiDAR Detection system developed as part of the IoT Project course in the summer semester 2025 (python part).
+
+The current documentation reflects the finalized system as tagged in V1.0. This includes:
+- [Final Documentation PDF](doc/IoT-Project_5-Safe_SoSe25_Documentation_public.pdf)
+- [Final Presentation PDF](doc/IoT-Project_5-Safe_SoSe25_Presentation_public.pdf)
+
+Below is a photo of the final demo setup, showing one of the two LiDAR sensors (on the lamp), GPU server (keyboard on top), and live visualization:
+![Demo Setup](doc/photos/demo-setup.jpg)
+
+---
+
 # System Overview
 
 The core of this repository is the `lidar_system/` Python project. It integrates all key components:
@@ -178,7 +191,7 @@ python main.py
 
 ---
 
-## Modes of Operation
+## Modes of Operation (data source)
 
 ### A) Using recorded PCAP Test Data (Offline - No Sensors Required)
 
@@ -212,6 +225,9 @@ sudo tcpdump -i enp71s0f0np0 udp port 5001
 ---
 
 
+## Modes of Operation (detection method)
+To switch between different detection modes (e.g. motion-based or change-based detection), open `lidar_system/config.py` and follow the inline comments.
+The file is well-structured and clearly documents how to enable and configure each implemented method.
 
 
 ## Initial Sensor Merge Setup (Transformation matrix)
