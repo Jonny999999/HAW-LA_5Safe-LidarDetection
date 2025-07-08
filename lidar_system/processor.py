@@ -102,7 +102,7 @@ def process_and_visualize_latest_frame(new_pointcloud, visualizer, status_cache)
             min_volume_m3=0.23, # initial detection threshold
             min_frames_to_confirm=15, # frame count the initial thresholds have to be fulfilled to be added as cluster
             retain_frames=800, # at 5fps
-            match_threshold=0.7, # distance of cluster center from old to new one to be detected as a match
+            match_threshold=0.9, # distance of cluster center from old to new one to be detected as a match
             # when too large e.g. >1.2 matches tracked actually still clusters to noise thus we get more clusters than there are people...
             enable_logging=True,
         ) #using default detection thresholds (see definition)

@@ -13,8 +13,8 @@ import numpy as np
 # Select mode we receive the sensor data
 # "UDP": stream live from UDP (uses UDP_ options)
 # "PCAP": stream from pcap dump file (uses PCAP_ options)
-DATA_RECEIVE_MODE = "PCAP"
-#DATA_RECEIVE_MODE = "UDP"
+#DATA_RECEIVE_MODE = "PCAP"
+DATA_RECEIVE_MODE = "UDP"
 
 
 #=== UDP Stream config ===
@@ -99,10 +99,9 @@ DASHBOARD_TCP_SERVER_ENABLED = False
 # - "merged_dual"         → sensor1 + transformed sensor2 in different colors
 # - "merged_filtered"     → merged + filtered comparison (visualize crop)
 # - "motion_detection"    → run tracking + show detected people
-VISUALIZER_WINDOW_1_MODE = "motion_detection"
-VISUALIZER_WINDOW_2_MODE = "ai"
-VISUALIZER_WINDOW_3_MODE = "none"
-#VISUALIZER_WINDOW_3_MODE = "none"
+VISUALIZER_WINDOW_1_MODE = "merged_dual"
+VISUALIZER_WINDOW_2_MODE = "motion_detection"
+VISUALIZER_WINDOW_3_MODE = "ai"
 
 # logging
 # TODO: use actual logging library with actual loglevels per TAG
@@ -173,7 +172,7 @@ POINTCLOUD_HISTORY_BUFFER_SIZE = 9  # Rolling buffer of last N frames
 
 # defines what pointcloud the detection algorithms get as input (also drawn as red points in visualizer in motion_detection mode)
 DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "HIGHPASS+DENOISE" # default - only keep changed points since oldest frame in buffer and filter separated points
-#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "CHANGED_POINTS_SINCE_START" # saves first merged pointcloud at startup, then only passes new points
+#DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "CHANGED_POINTS_SINCE_START" # diff mode - saves first merged pointcloud at startup, then only passes new points
 #DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "HIGHPASS"    # only keep points changed since oldest frame in buffer
 #DETECTION_ALGORITHM_INPUT_DATA_FILTER_MODE = "OLDEST"      # simply use oldest frame in buffer (to test buffer size)
 
